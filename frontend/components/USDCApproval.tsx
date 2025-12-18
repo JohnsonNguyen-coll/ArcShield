@@ -48,19 +48,17 @@ export default function USDCApproval({ spender, requiredAmount }: USDCApprovalPr
   const [approveAmount, setApproveAmount] = useState('')
 
   const { data: balance } = useReadContract({
-    address: USDC_ADDRESS,
+    address: address ? USDC_ADDRESS : undefined,
     abi: USDC_ABI,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
-    enabled: !!address,
   })
 
   const { data: allowance } = useReadContract({
-    address: USDC_ADDRESS,
+    address: address && spender ? USDC_ADDRESS : undefined,
     abi: USDC_ABI,
     functionName: 'allowance',
     args: address && spender ? [address, spender] : undefined,
-    enabled: !!address && !!spender,
   })
 
   const {
@@ -171,4 +169,6 @@ export default function USDCApproval({ spender, requiredAmount }: USDCApprovalPr
     </div>
   )
 }
+
+
 

@@ -43,15 +43,14 @@ export default function HealthFactorCard() {
   const routerAddress = process.env.NEXT_PUBLIC_ARCSHIELD_ROUTER_ADDRESS as `0x${string}`
 
   const { data: hasPosition } = useReadContract({
-    address: routerAddress,
+    address: address && routerAddress ? routerAddress : undefined,
     abi: ROUTER_ABI,
     functionName: 'hasPosition',
     args: address ? [address] : undefined,
-    enabled: !!address && !!routerAddress,
   })
 
   const { data: positionAddress } = useReadContract({
-    address: routerAddress,
+    address: address && routerAddress && hasPosition ? routerAddress : undefined,
     abi: [
       {
         inputs: [{ name: 'user', type: 'address' }],
@@ -63,29 +62,25 @@ export default function HealthFactorCard() {
     ],
     functionName: 'getPosition',
     args: address ? [address] : undefined,
-    enabled: !!address && !!routerAddress && hasPosition,
   })
 
   const { data: healthFactor } = useReadContract({
-    address: routerAddress,
+    address: address && routerAddress && hasPosition ? routerAddress : undefined,
     abi: ROUTER_ABI,
     functionName: 'getHealthFactor',
     args: address ? [address] : undefined,
-    enabled: !!address && !!routerAddress && hasPosition,
   })
 
   const { data: riskStatus } = useReadContract({
-    address: positionAddress as `0x${string}`,
+    address: positionAddress ? (positionAddress as `0x${string}`) : undefined,
     abi: POSITION_ABI,
     functionName: 'getRiskStatus',
-    enabled: !!positionAddress,
   })
 
   const { data: safetyBuffer } = useReadContract({
-    address: positionAddress as `0x${string}`,
+    address: positionAddress ? (positionAddress as `0x${string}`) : undefined,
     abi: POSITION_ABI,
     functionName: 'getSafetyBuffer',
-    enabled: !!positionAddress,
   })
 
   if (!hasPosition || healthFactor === undefined) {

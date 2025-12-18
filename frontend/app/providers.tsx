@@ -1,15 +1,16 @@
 'use client'
 
-import { WagmiConfig, createConfig, configureChains } from 'wagmi'
-import { publicProvider } from 'wagmi/providers/public'
-import { RainbowKitProvider, getDefaultWallets } from '@rainbow-me/rainbowkit'
+import { WagmiProvider, createConfig, http } from 'wagmi'
+import { getDefaultConfig } from '@rainbow-me/rainbowkit'
+import { RainbowKitProvider } from '@rainbow-me/rainbowkit'
 import '@rainbow-me/rainbowkit/styles.css'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 
 // Arc Testnet configuration
+// Chain ID theo Arc docs: https://docs.arc.network/arc/references/connect-to-arc
 const arcTestnet = {
-  id: 1243,
+  id: 5042002,
   name: 'Arc Testnet',
   network: 'arc-testnet',
   nativeCurrency: {
@@ -18,43 +19,34 @@ const arcTestnet = {
     symbol: 'USDC',
   },
   rpcUrls: {
-    public: { http: ['https://rpc.testnet.arc.network'] },
     default: { http: ['https://rpc.testnet.arc.network'] },
   },
   blockExplorers: {
     default: { name: 'ArcScan', url: 'https://testnet.arcscan.app' },
   },
   testnet: true,
-}
+} as const
 
-const { chains, publicClient } = configureChains(
-  [arcTestnet],
-  [publicProvider()]
-)
-
-const { connectors } = getDefaultWallets({
+const config = getDefaultConfig({
   appName: 'ArcShield',
-  projectId: 'arcshield-protection-protocol',
-  chains,
-})
-
-const config = createConfig({
-  autoConnect: true,
-  connectors,
-  publicClient,
+  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'arcshield-protection-protocol',
+  chains: [arcTestnet],
+  transports: {
+    [arcTestnet.id]: http('https://rpc.testnet.arc.network'),
+  },
 })
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient())
 
   return (
-    <WagmiConfig config={config}>
+    <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider chains={chains} modalSize="compact">
+        <RainbowKitProvider modalSize="compact">
           {children}
         </RainbowKitProvider>
       </QueryClientProvider>
-    </WagmiConfig>
+    </WagmiProvider>
   )
 }
 
