@@ -66,6 +66,7 @@ export default function USDCApproval({ spender, requiredAmount }: USDCApprovalPr
     data: approveHash,
     isPending: isApproving,
     error: approveError,
+    reset: resetApprove,
   } = useWriteContract()
 
   const { isLoading: isConfirming, isSuccess: isApproved } = useWaitForTransactionReceipt({
@@ -75,7 +76,19 @@ export default function USDCApproval({ spender, requiredAmount }: USDCApprovalPr
   const balanceNum = balance ? Number(formatUnits(balance, 6)) : 0
   const allowanceNum = allowance ? Number(formatUnits(allowance, 6)) : 0
   const requiredNum = requiredAmount ? parseFloat(requiredAmount) : 0
-  const needsApproval = requiredNum > 0 && allowanceNum < requiredNum
+  // Hide component if approval is successful (allowance will be updated and needsApproval becomes false)
+  // Also hide immediately when isApproved is true, even before allowance refetches
+  const needsApproval = requiredNum > 0 && allowanceNum < requiredNum && !isApproved
+
+  // Check if error is user rejection
+  const isUserRejection = approveError && (
+    approveError.message?.toLowerCase().includes('user rejected') ||
+    approveError.message?.toLowerCase().includes('user denied') ||
+    approveError.message?.toLowerCase().includes('rejected') ||
+    approveError.message?.toLowerCase().includes('cancelled') ||
+    (approveError as any)?.code === 4001 ||
+    (approveError as any)?.shortMessage?.toLowerCase().includes('rejected')
+  )
 
   const handleApprove = () => {
     if (!spender) return
@@ -110,10 +123,18 @@ export default function USDCApproval({ spender, requiredAmount }: USDCApprovalPr
           </p>
 
           {approveError && (
-            <div className="mb-3 p-2 bg-danger-50 border border-danger-200 rounded-lg">
-              <p className="text-xs text-danger-700">
-                {approveError.message || 'Approval failed'}
+            <div className="mb-3 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+              <p className="text-xs text-slate-700">
+                {isUserRejection 
+                  ? 'Đã hủy' 
+                  : approveError.message || 'Approval failed'}
               </p>
+              <button
+                onClick={() => resetApprove()}
+                className="text-xs text-slate-500 hover:text-slate-700 mt-1 underline"
+              >
+                Đóng
+              </button>
             </div>
           )}
 

@@ -3,6 +3,7 @@
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useAccount } from 'wagmi'
 import { Shield, TrendingUp, AlertTriangle, DollarSign } from 'lucide-react'
+import { useState, useEffect } from 'react'
 import ProtectionPanel from '@/components/ProtectionPanel'
 import PositionDashboard from '@/components/PositionDashboard'
 import HealthFactorCard from '@/components/HealthFactorCard'
@@ -10,6 +11,12 @@ import CostTransparency from '@/components/CostTransparency'
 
 export default function Home() {
   const { isConnected } = useAccount()
+  const [mounted, setMounted] = useState(false)
+
+  // Prevent hydration mismatch by only rendering conditional content on client
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   return (
     <main className="min-h-screen">
@@ -91,7 +98,17 @@ export default function Home() {
         </div>
 
         {/* Main Content */}
-        {isConnected ? (
+        {!mounted ? (
+          // Show loading state during hydration to prevent mismatch
+          <div className="card max-w-2xl mx-auto text-center py-12">
+            <div className="bg-primary-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Shield className="w-8 h-8 text-primary-600" />
+            </div>
+            <h3 className="text-2xl font-semibold text-slate-900 mb-2">
+              Loading...
+            </h3>
+          </div>
+        ) : isConnected ? (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left Column - Protection Panel */}
             <div className="lg:col-span-2 space-y-6">
