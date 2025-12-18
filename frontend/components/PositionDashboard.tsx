@@ -3,7 +3,7 @@
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { formatUnits, parseUnits } from 'viem'
 import { TrendingUp, TrendingDown, X, AlertCircle } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const ROUTER_ABI = [
   {
@@ -68,16 +68,37 @@ export default function PositionDashboard() {
   const [reduceAmount, setReduceAmount] = useState('')
   const [error, setError] = useState('')
 
-  const { writeContract: writeClose, isPending: isClosing, isSuccess: isClosed } = useWriteContract()
-  const { writeContract: writeReduce, isPending: isReducing, isSuccess: isReduced } = useWriteContract()
+  const { 
+    writeContract: writeClose, 
+    data: closeHash,
+    isPending: isClosing 
+  } = useWriteContract()
+  
+  const { 
+    writeContract: writeReduce, 
+    data: reduceHash,
+    isPending: isReducing 
+  } = useWriteContract()
 
-  const { isLoading: isConfirmingClose } = useWaitForTransactionReceipt({
-    hash: isClosed ? undefined : undefined,
+  const { isLoading: isConfirmingClose, isSuccess: isClosed } = useWaitForTransactionReceipt({
+    hash: closeHash,
   })
 
-  const { isLoading: isConfirmingReduce } = useWaitForTransactionReceipt({
-    hash: isReduced ? undefined : undefined,
+  const { isLoading: isConfirmingReduce, isSuccess: isReduced } = useWaitForTransactionReceipt({
+    hash: reduceHash,
   })
+
+  // Close modal when reduce is successful
+  useEffect(() => {
+    if (isReduced && showReduceModal) {
+      const timer = setTimeout(() => {
+        setShowReduceModal(false)
+        setReduceAmount('')
+        setError('')
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [isReduced, showReduceModal])
 
   const { data: hasPosition } = useReadContract({
     address: routerAddress,
@@ -355,13 +376,7 @@ export default function PositionDashboard() {
       args: [repayAmount],
     })
 
-    // Close modal after successful transaction
-    setTimeout(() => {
-      if (isReduced) {
-        setShowReduceModal(false)
-        setReduceAmount('')
-      }
-    }, 2000)
+    // Modal will close when isReduced becomes true (handled by useEffect)
   }
 }
 
