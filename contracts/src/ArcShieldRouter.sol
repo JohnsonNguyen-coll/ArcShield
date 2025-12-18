@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import "./HedgePosition.sol";
 import "./IArcShieldRouter.sol";
+import "./IERC20.sol";
 
 /**
  * @title ArcShieldRouter
@@ -12,13 +13,6 @@ import "./IArcShieldRouter.sol";
 contract ArcShieldRouter is IArcShieldRouter {
     // Arc Testnet USDC address (native token with ERC-20 interface)
     address public constant USDC = 0x3600000000000000000000000000000000000000;
-    
-    // Interface for USDC ERC-20 functions
-    interface IERC20 {
-        function transferFrom(address from, address to, uint256 amount) external returns (bool);
-        function transfer(address to, uint256 amount) external returns (bool);
-        function balanceOf(address account) external view returns (uint256);
-    }
     
     // LTV mappings
     mapping(ProtectionLevel => uint256) public ltvLimits;
