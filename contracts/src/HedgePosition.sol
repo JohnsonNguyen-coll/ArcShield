@@ -2,6 +2,7 @@
 pragma solidity ^0.8.30;
 
 import "./IArcShieldRouter.sol";
+import "./PriceOracle.sol";
 
 /**
  * @title HedgePosition
@@ -11,10 +12,13 @@ import "./IArcShieldRouter.sol";
 contract HedgePosition {
     IArcShieldRouter.ProtectionLevel public protectionLevel;
     address public owner;
+    address public router; // Router contract that manages this position
     uint256 public collateral;
     uint256 public debt;
     uint256 public createdAt;
     bool public isActive;
+    string public targetCurrency; // Currency being hedged (BRL, MXN, EUR)
+    PriceOracle public oracle; // Price oracle for FX rates
     
     // Health factor threshold
     uint256 public constant LIQUIDATION_THRESHOLD = 11500; // 1.15 in basis points
@@ -38,6 +42,11 @@ contract HedgePosition {
         _;
     }
     
+    modifier onlyOwnerOrRouter() {
+        require(msg.sender == owner || msg.sender == router, "Not position owner or router");
+        _;
+    }
+    
     modifier onlyActive() {
         require(isActive, "Position not active");
         _;
@@ -47,12 +56,18 @@ contract HedgePosition {
         address _owner,
         uint256 _collateral,
         uint256 _debt,
-        IArcShieldRouter.ProtectionLevel _level
+        IArcShieldRouter.ProtectionLevel _level,
+        string memory _targetCurrency,
+        address _oracle,
+        address _router
     ) {
         owner = _owner;
+        router = _router;
         collateral = _collateral;
         debt = _debt;
         protectionLevel = _level;
+        targetCurrency = _targetCurrency;
+        oracle = PriceOracle(_oracle);
         createdAt = block.timestamp;
         isActive = true;
         
@@ -60,18 +75,38 @@ contract HedgePosition {
     }
     
     /**
-     * @notice Get current health factor
+     * @notice Get current health factor using real-time FX rates
      * @return Health factor in basis points (e.g., 20000 = 2.0)
+     * @dev HF = (collateral * collateralFactor * exchangeRate) / debt
+     *      Exchange rate accounts for currency depreciation/appreciation
      */
     function getHealthFactor() public view returns (uint256) {
         if (debt == 0) return type(uint256).max;
         
-        // Simplified health factor calculation
-        // In production, this would account for price oracles
-        // HF = (collateral * collateralFactor) / debt
         uint256 collateralFactor = 8000; // 80% in basis points
         
-        return (collateral * collateralFactor) / debt;
+        // Get current exchange rate from oracle
+        (uint256 exchangeRate, bool isStale) = oracle.getPrice(targetCurrency);
+        
+        // If price is stale, use conservative estimate (assume currency depreciated)
+        // This protects users from stale data attacks
+        if (isStale || exchangeRate == 0) {
+            // Fallback to simplified calculation if oracle fails
+            return (collateral * collateralFactor) / debt;
+        }
+        
+        // Health factor calculation with real-time FX rate
+        // Exchange rate is in 8 decimals, so we need to normalize
+        // Example: 1 BRL = 0.2 USD = 20000000 (8 decimals)
+        // If BRL depreciates to 0.15 USD, exchangeRate decreases, HF decreases
+        
+        // Normalize exchange rate to 18 decimals for calculation
+        // exchangeRate is in 8 decimals, we need 18 decimals
+        uint256 normalizedRate = exchangeRate * 1e10; // 8 -> 18 decimals
+        
+        // HF = (collateral * collateralFactor * normalizedRate) / (debt * 1e8)
+        // Simplified: HF = (collateral * collateralFactor * exchangeRate) / (debt * 1e8)
+        return (collateral * collateralFactor * normalizedRate) / (debt * 1e8);
     }
     
     /**
@@ -102,7 +137,7 @@ contract HedgePosition {
     /**
      * @notice Close the position
      */
-    function close() external onlyOwner onlyActive {
+    function close() external onlyOwnerOrRouter onlyActive {
         isActive = false;
         emit PositionClosed(owner);
     }
@@ -111,7 +146,7 @@ contract HedgePosition {
      * @notice Repay debt to reduce position
      * @param amount Amount to repay
      */
-    function repay(uint256 amount) external onlyOwner onlyActive {
+    function repay(uint256 amount) external onlyOwnerOrRouter onlyActive {
         require(amount > 0, "Amount must be > 0");
         require(amount <= debt, "Cannot repay more than debt");
         

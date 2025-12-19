@@ -2,6 +2,7 @@
 pragma solidity ^0.8.30;
 
 import "./HedgePosition.sol";
+import "./HedgePositionFactory.sol";
 import "./IArcShieldRouter.sol";
 import "./IERC20.sol";
 
@@ -70,12 +71,14 @@ contract ArcShieldRouter is IArcShieldRouter {
             "USDC transfer failed. Please approve USDC first."
         );
         
-        // Create new hedge position
+        // Create new hedge position with target currency
         HedgePosition position = positionFactory.createPosition(
             msg.sender,
             collateralAmount,
             maxBorrow,
-            level
+            level,
+            targetCurrency,
+            address(this)
         );
         
         positionAddress = address(position);
@@ -103,9 +106,9 @@ contract ArcShieldRouter is IArcShieldRouter {
         require(position.isActive(), "Position already closed");
         
         // Get position details
-        (address owner, uint256 collateral, uint256 debt, , , , bool isActive) = 
+        (address positionOwner, uint256 collateral, uint256 debt, , , , bool isActive) = 
             position.getPositionDetails();
-        require(owner == msg.sender, "Not position owner");
+        require(positionOwner == msg.sender, "Not position owner");
         require(isActive, "Position not active");
         
         // Close the position
