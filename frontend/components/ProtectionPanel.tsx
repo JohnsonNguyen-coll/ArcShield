@@ -1,11 +1,10 @@
 'use client'
 
-import { useState } from 'react'
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useState, useEffect } from 'react'
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi'
 import { Shield, AlertCircle } from 'lucide-react'
 import { parseUnits, formatUnits } from 'viem'
 import ProtectionSlider from './ProtectionSlider'
-import USDCApproval from './USDCApproval'
 
 // Contract ABI (simplified - in production, import from artifacts)
 const ROUTER_ABI = [
@@ -20,7 +19,39 @@ const ROUTER_ABI = [
     stateMutability: 'nonpayable',
     type: 'function',
   },
+  {
+    inputs: [{ name: 'user', type: 'address' }],
+    name: 'hasPosition',
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
 ] as const
+
+const USDC_ABI = [
+  {
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+    ],
+    name: 'allowance',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'spender', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    name: 'approve',
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+] as const
+
+const USDC_ADDRESS = '0x3600000000000000000000000000000000000000' as `0x${string}`
 
 export default function ProtectionPanel() {
   const { address, isConnected } = useAccount()
@@ -36,11 +67,99 @@ export default function ProtectionPanel() {
     data: hash,
     isPending,
     error: writeError,
+    reset: resetWriteError,
   } = useWriteContract()
 
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   })
+
+  // Check if user already has a position
+  const { data: hasPosition } = useReadContract({
+    address: address && routerAddress ? routerAddress : undefined,
+    abi: ROUTER_ABI,
+    functionName: 'hasPosition',
+    args: address ? [address] : undefined,
+  })
+
+  // Check USDC allowance
+  const { data: allowance, refetch: refetchAllowance } = useReadContract({
+    address: address && routerAddress ? USDC_ADDRESS : undefined,
+    abi: USDC_ABI,
+    functionName: 'allowance',
+    args: address && routerAddress ? [address, routerAddress] : undefined,
+    query: {
+      enabled: !!address && !!routerAddress && !!collateralAmount && parseFloat(collateralAmount) > 0,
+      refetchInterval: 3000, // Refetch every 3 seconds to catch approval updates
+    },
+  })
+
+  // Approve USDC
+  const {
+    writeContract: approveUSDC,
+    data: approveHash,
+    isPending: isApproving,
+    error: approveError,
+    reset: resetApprove,
+  } = useWriteContract()
+
+  const { isLoading: isApprovingConfirming, isSuccess: isApproved } = useWaitForTransactionReceipt({
+    hash: approveHash,
+  })
+
+  // Refetch allowance after successful approval
+  useEffect(() => {
+    if (isApproved && refetchAllowance) {
+      const timer = setTimeout(() => {
+        refetchAllowance()
+      }, 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [isApproved, refetchAllowance])
+
+  const allowanceNum = allowance ? Number(formatUnits(allowance, 6)) : 0
+  const collateralNum = collateralAmount ? parseFloat(collateralAmount) : 0
+  const hasEnoughAllowance = collateralNum > 0 && allowanceNum >= collateralNum
+  // Hide approve button when approved successfully, even before allowance refetches
+  const needsApproval = collateralNum > 0 && !hasEnoughAllowance && !isApproved
+
+  // Check if approve error is user rejection
+  const isApproveUserRejection = approveError && (
+    approveError.message?.toLowerCase().includes('user rejected') ||
+    approveError.message?.toLowerCase().includes('user denied') ||
+    approveError.message?.toLowerCase().includes('rejected') ||
+    approveError.message?.toLowerCase().includes('cancelled') ||
+    approveError.message?.toLowerCase().includes('denied request') ||
+    (approveError as any)?.code === 4001 ||
+    (approveError as any)?.shortMessage?.toLowerCase().includes('rejected') ||
+    (approveError as any)?.shortMessage?.toLowerCase().includes('denied')
+  )
+
+  // Check if error is user rejection
+  const isUserRejection = writeError && (
+    writeError.message?.toLowerCase().includes('user rejected') ||
+    writeError.message?.toLowerCase().includes('user denied') ||
+    writeError.message?.toLowerCase().includes('rejected') ||
+    writeError.message?.toLowerCase().includes('cancelled') ||
+    writeError.message?.toLowerCase().includes('denied request') ||
+    (writeError as any)?.code === 4001 ||
+    (writeError as any)?.shortMessage?.toLowerCase().includes('rejected') ||
+    (writeError as any)?.shortMessage?.toLowerCase().includes('denied')
+  )
+
+  const handleApprove = () => {
+    if (!routerAddress) return
+
+    // Approve max amount (1M USDC) for convenience
+    const amount = parseUnits('1000000', 6)
+
+    approveUSDC({
+      address: USDC_ADDRESS,
+      abi: USDC_ABI,
+      functionName: 'approve',
+      args: [routerAddress, amount],
+    })
+  }
 
   const handleActivate = async () => {
     if (!isConnected || !address) {
@@ -115,11 +234,21 @@ export default function ProtectionPanel() {
       )}
 
       {writeError && (
-        <div className="mb-4 p-4 bg-danger-50 border border-danger-200 rounded-xl flex items-start space-x-3">
-          <AlertCircle className="w-5 h-5 text-danger-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-danger-700">
-            {writeError.message || 'Transaction failed'}
-          </p>
+        <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+          <div className="flex items-start justify-between">
+            <div className="flex items-start space-x-2 flex-1">
+              <AlertCircle className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-slate-700">
+                {isUserRejection ? 'Đã hủy giao dịch' : 'Giao dịch thất bại'}
+              </p>
+            </div>
+            <button
+              onClick={() => resetWriteError()}
+              className="text-xs text-slate-500 hover:text-slate-700 underline ml-2"
+            >
+              Đóng
+            </button>
+          </div>
         </div>
       )}
 
@@ -131,12 +260,39 @@ export default function ProtectionPanel() {
         </div>
       )}
 
-      {/* USDC Approval Check */}
-      {routerAddress && collateralAmount && parseFloat(collateralAmount) > 0 && (
-        <USDCApproval
-          spender={routerAddress}
-          requiredAmount={collateralAmount}
-        />
+      {/* Position Already Exists Warning */}
+      {hasPosition && (
+        <div className="mb-4 p-4 bg-warning-50 border border-warning-200 rounded-xl flex items-start space-x-3">
+          <AlertCircle className="w-5 h-5 text-warning-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-warning-900 mb-1">
+              Bạn đã có một position đang active
+            </p>
+            <p className="text-xs text-warning-700">
+              Vui lòng close position hiện tại trước khi tạo position mới. Bạn có thể close position trong phần "Your Position".
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Approve Error */}
+      {approveError && (
+        <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+          <div className="flex items-start justify-between">
+            <div className="flex items-start space-x-2 flex-1">
+              <AlertCircle className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-slate-700">
+                {isApproveUserRejection ? 'Đã hủy approval' : 'Approval thất bại'}
+              </p>
+            </div>
+            <button
+              onClick={() => resetApprove()}
+              className="text-xs text-slate-500 hover:text-slate-700 underline ml-2"
+            >
+              Đóng
+            </button>
+          </div>
+        </div>
       )}
 
       <div className="space-y-6">
@@ -153,7 +309,7 @@ export default function ProtectionPanel() {
             onChange={(e) => setCollateralAmount(e.target.value)}
             placeholder="1000"
             className="input-field"
-            disabled={isPending || isConfirming}
+            disabled={isPending || isConfirming || hasPosition}
           />
           <p className="text-xs text-slate-500 mt-1">
             Amount of USDC to use as collateral
@@ -169,7 +325,7 @@ export default function ProtectionPanel() {
             value={targetCurrency}
             onChange={(e) => setTargetCurrency(e.target.value)}
             className="input-field"
-            disabled={isPending || isConfirming}
+            disabled={isPending || isConfirming || hasPosition}
           >
             <option value="BRL">Brazilian Real (BRL)</option>
             <option value="MXN">Mexican Peso (MXN)</option>
@@ -185,14 +341,14 @@ export default function ProtectionPanel() {
           <ProtectionSlider
             value={protectionLevel}
             onChange={setProtectionLevel}
-            disabled={isPending || isConfirming}
+            disabled={isPending || isConfirming || hasPosition}
           />
           <div className="mt-4 grid grid-cols-3 gap-3">
             {protectionLevels.map((level) => (
               <button
                 key={level.value}
                 onClick={() => setProtectionLevel(level.value as 0 | 1 | 2)}
-                disabled={isPending || isConfirming}
+                disabled={isPending || isConfirming || hasPosition}
                 className={`p-4 rounded-xl border-2 transition-all ${
                   protectionLevel === level.value
                     ? 'border-primary-500 bg-primary-50'
@@ -211,18 +367,35 @@ export default function ProtectionPanel() {
           </div>
         </div>
 
-        {/* Activate Button */}
-        <button
-          onClick={handleActivate}
-          disabled={isPending || isConfirming || !isConnected}
-          className="btn-primary w-full"
-        >
-          {isPending || isConfirming
-            ? 'Processing...'
-            : isSuccess
-            ? 'Protection Active'
-            : 'Activate Protection'}
-        </button>
+        {/* Action Buttons */}
+        <div className="flex gap-3">
+          {needsApproval && !hasPosition && (
+            <button
+              onClick={handleApprove}
+              disabled={isApproving || isApprovingConfirming || isApproved || !isConnected}
+              className="btn-primary flex-1"
+            >
+              {isApproving || isApprovingConfirming
+                ? 'Approving...'
+                : isApproved
+                ? 'Approved ✓'
+                : 'Approve USDC'}
+            </button>
+          )}
+          <button
+            onClick={handleActivate}
+            disabled={isPending || isConfirming || !isConnected || needsApproval || hasPosition}
+            className={`${needsApproval && !hasPosition ? 'flex-1' : 'w-full'} btn-primary`}
+          >
+            {isPending || isConfirming
+              ? 'Processing...'
+              : isSuccess
+              ? 'Protection Active'
+              : hasPosition
+              ? 'Close Position First'
+              : 'Activate Protection'}
+          </button>
+        </div>
       </div>
     </div>
   )

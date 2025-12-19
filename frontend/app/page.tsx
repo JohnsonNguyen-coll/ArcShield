@@ -8,6 +8,7 @@ import ProtectionPanel from '@/components/ProtectionPanel'
 import PositionDashboard from '@/components/PositionDashboard'
 import HealthFactorCard from '@/components/HealthFactorCard'
 import CostTransparency from '@/components/CostTransparency'
+import PriceDisplay from '@/components/PriceDisplay'
 
 export default function Home() {
   const { isConnected } = useAccount()
@@ -120,6 +121,27 @@ export default function Home() {
             <div className="space-y-6">
               <HealthFactorCard />
               <CostTransparency />
+              
+              {/* Real-time FX Rates */}
+              <div className="card">
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">
+                  Real-time FX Rates
+                </h3>
+                <div className="space-y-3">
+                  <PriceDisplay
+                    oracleAddress={process.env.NEXT_PUBLIC_PRICE_ORACLE_ADDRESS as `0x${string}`}
+                    currency="BRL"
+                  />
+                  <PriceDisplay
+                    oracleAddress={process.env.NEXT_PUBLIC_PRICE_ORACLE_ADDRESS as `0x${string}`}
+                    currency="MXN"
+                  />
+                  <PriceDisplay
+                    oracleAddress={process.env.NEXT_PUBLIC_PRICE_ORACLE_ADDRESS as `0x${string}`}
+                    currency="EUR"
+                  />
+                </div>
+              </div>
             </div>
           </div>
         ) : (

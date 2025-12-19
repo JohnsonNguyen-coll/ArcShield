@@ -71,7 +71,9 @@ export default function PositionDashboard() {
   const { 
     writeContract: writeClose, 
     data: closeHash,
-    isPending: isClosing 
+    isPending: isClosing,
+    error: closeError,
+    reset: resetCloseError,
   } = useWriteContract()
   
   const { 
@@ -100,12 +102,22 @@ export default function PositionDashboard() {
     }
   }, [isReduced, showReduceModal])
 
-  const { data: hasPosition } = useReadContract({
+  const { data: hasPosition, refetch: refetchHasPosition } = useReadContract({
     address: address && routerAddress ? routerAddress : undefined,
     abi: ROUTER_ABI,
     functionName: 'hasPosition',
     args: address ? [address] : undefined,
   })
+
+  // Refetch hasPosition after closing position
+  useEffect(() => {
+    if (isClosed && refetchHasPosition) {
+      const timer = setTimeout(() => {
+        refetchHasPosition()
+      }, 2000) // Wait for blockchain to update
+      return () => clearTimeout(timer)
+    }
+  }, [isClosed, refetchHasPosition])
 
   const { data: positionAddress } = useReadContract({
     address: address && routerAddress && hasPosition ? routerAddress : undefined,
@@ -244,11 +256,45 @@ export default function PositionDashboard() {
         </p>
       </div>
 
+      {/* Close Error */}
+      {closeError && (
+        <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+          <div className="flex items-start justify-between">
+            <div className="flex items-start space-x-2 flex-1">
+              <AlertCircle className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-slate-700">
+                {closeError.message?.toLowerCase().includes('user rejected') ||
+                closeError.message?.toLowerCase().includes('user denied') ||
+                closeError.message?.toLowerCase().includes('rejected') ||
+                (closeError as any)?.code === 4001
+                  ? 'Đã hủy giao dịch'
+                  : closeError.message || 'Close position thất bại'}
+              </p>
+            </div>
+            <button
+              onClick={() => resetCloseError()}
+              className="text-xs text-slate-500 hover:text-slate-700 underline ml-2"
+            >
+              Đóng
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Close Success */}
+      {isClosed && (
+        <div className="mb-4 p-4 bg-success-50 border border-success-200 rounded-xl">
+          <p className="text-sm text-success-700 font-medium">
+            ✅ Position đã được close thành công!
+          </p>
+        </div>
+      )}
+
       <div className="flex space-x-3">
         <button
           onClick={() => setShowReduceModal(true)}
           className="btn-secondary flex-1"
-          disabled={isClosing || isReducing}
+          disabled={isClosing || isReducing || isConfirmingClose}
         >
           Reduce Protection
         </button>

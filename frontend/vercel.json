@@ -1,0 +1,17 @@
+{
+  "crons": [
+    {
+      "path": "/api/update-oracle",
+      "schedule": "0 * * * *"
+    }
+  ]
+}
+
+
+
+
+
+
+
+
+

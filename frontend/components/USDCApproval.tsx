@@ -3,7 +3,7 @@
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { parseUnits, formatUnits } from 'viem'
 import { AlertCircle, CheckCircle } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 // Arc Testnet USDC address
 const USDC_ADDRESS = '0x3600000000000000000000000000000000000000' as `0x${string}`
@@ -54,7 +54,7 @@ export default function USDCApproval({ spender, requiredAmount }: USDCApprovalPr
     args: address ? [address] : undefined,
   })
 
-  const { data: allowance } = useReadContract({
+  const { data: allowance, refetch: refetchAllowance } = useReadContract({
     address: address && spender ? USDC_ADDRESS : undefined,
     abi: USDC_ABI,
     functionName: 'allowance',
@@ -72,6 +72,17 @@ export default function USDCApproval({ spender, requiredAmount }: USDCApprovalPr
   const { isLoading: isConfirming, isSuccess: isApproved } = useWaitForTransactionReceipt({
     hash: approveHash,
   })
+
+  // Refetch allowance after successful approval
+  useEffect(() => {
+    if (isApproved && refetchAllowance) {
+      // Small delay to ensure blockchain state is updated
+      const timer = setTimeout(() => {
+        refetchAllowance()
+      }, 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [isApproved, refetchAllowance])
 
   const balanceNum = balance ? Number(formatUnits(balance, 6)) : 0
   const allowanceNum = allowance ? Number(formatUnits(allowance, 6)) : 0

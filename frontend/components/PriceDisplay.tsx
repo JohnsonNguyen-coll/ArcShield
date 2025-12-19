@@ -53,11 +53,13 @@ export default function PriceDisplay({ oracleAddress, currency }: PriceDisplayPr
   }
 
   useEffect(() => {
-    fetchApiPrice()
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchApiPrice, 30000)
-    return () => clearInterval(interval)
-  }, [currency])
+    if (oracleAddress) {
+      fetchApiPrice()
+      // Refresh every 30 seconds
+      const interval = setInterval(fetchApiPrice, 30000)
+      return () => clearInterval(interval)
+    }
+  }, [currency, oracleAddress])
 
   const onChainRate = onChainPrice
     ? rateFrom8Decimals((onChainPrice as [bigint, boolean])[0])
