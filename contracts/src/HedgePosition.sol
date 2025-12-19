@@ -96,17 +96,21 @@ contract HedgePosition {
         }
         
         // Health factor calculation with real-time FX rate
-        // Exchange rate is in 8 decimals, so we need to normalize
-        // Example: 1 BRL = 0.2 USD = 20000000 (8 decimals)
-        // If BRL depreciates to 0.15 USD, exchangeRate decreases, HF decreases
+        // Note: Both collateral and debt are in USDC, so the basic formula is:
+        // HF = (collateral * collateralFactor) / debt
+        // The exchange rate is used to adjust for currency risk, but since both
+        // collateral and debt are denominated in USDC, we use the same formula as fallback.
+        // The exchange rate could be used for future enhancements (e.g., if collateral
+        // or debt were denominated in foreign currency), but for now we keep it simple.
         
-        // Normalize exchange rate to 18 decimals for calculation
-        // exchangeRate is in 8 decimals, we need 18 decimals
-        uint256 normalizedRate = exchangeRate * 1e10; // 8 -> 18 decimals
-        
-        // HF = (collateral * collateralFactor * normalizedRate) / (debt * 1e8)
-        // Simplified: HF = (collateral * collateralFactor * exchangeRate) / (debt * 1e8)
-        return (collateral * collateralFactor * normalizedRate) / (debt * 1e8);
+        // Health factor formula: HF = (collateral * collateralFactor) / debt
+        // - collateral: 6 decimals (e.g., 250000 = 0.25 USDC)
+        // - debt: 6 decimals (e.g., 90000 = 0.09 USDC)
+        // - collateralFactor: basis points (e.g., 8000 = 0.8)
+        // Result is in basis points (e.g., 22222 = 2.22)
+        // 
+        // Example: (250000 * 8000) / 90000 = 2000000 / 90000 = 22222 (2.22 in decimal)
+        return (collateral * collateralFactor) / debt;
     }
     
     /**
