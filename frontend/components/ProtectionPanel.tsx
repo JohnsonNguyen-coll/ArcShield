@@ -75,12 +75,22 @@ export default function ProtectionPanel() {
   })
 
   // Check if user already has a position
-  const { data: hasPosition } = useReadContract({
+  const { data: hasPosition, refetch: refetchHasPosition } = useReadContract({
     address: address && routerAddress ? routerAddress : undefined,
     abi: ROUTER_ABI,
     functionName: 'hasPosition',
     args: address ? [address] : undefined,
   })
+
+  // Refetch hasPosition after successful activation
+  useEffect(() => {
+    if (isSuccess && refetchHasPosition) {
+      const timer = setTimeout(() => {
+        refetchHasPosition()
+      }, 2000) // Wait 2 seconds for blockchain to update
+      return () => clearTimeout(timer)
+    }
+  }, [isSuccess, refetchHasPosition])
 
   // Check USDC allowance
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
@@ -213,48 +223,48 @@ export default function ProtectionPanel() {
   return (
     <div className="card">
       <div className="flex items-center space-x-3 mb-6">
-        <div className="bg-primary-100 p-2 rounded-lg">
-          <Shield className="w-5 h-5 text-primary-600" />
+        <div className="bg-purple-800/50 p-2 rounded-lg">
+          <Shield className="w-5 h-5 text-purple-300" />
         </div>
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">
+          <h2 className="text-2xl font-bold text-white">
             Activate Protection
           </h2>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-purple-400">
             Protect your assets from currency risk
           </p>
         </div>
       </div>
 
       {error && (
-        <div className="mb-4 p-4 bg-danger-50 border border-danger-200 rounded-xl flex items-start space-x-3">
-          <AlertCircle className="w-5 h-5 text-danger-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-danger-700">{error}</p>
+        <div className="mb-4 p-4 bg-red-900/30 border border-red-700/50 rounded-xl flex items-start space-x-3">
+          <AlertCircle className="w-5 h-5 text-red-300 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-red-200">{error}</p>
         </div>
       )}
 
       {writeError && (
-        <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+        <div className="mb-4 p-3 bg-purple-800/30 border border-purple-700/30 rounded-lg">
           <div className="flex items-start justify-between">
             <div className="flex items-start space-x-2 flex-1">
-              <AlertCircle className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-slate-700">
-                {isUserRejection ? 'Đã hủy giao dịch' : 'Giao dịch thất bại'}
+              <AlertCircle className="w-4 h-4 text-purple-300 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-purple-200">
+                {isUserRejection ? 'Transaction cancelled' : 'Transaction failed'}
               </p>
             </div>
             <button
               onClick={() => resetWriteError()}
-              className="text-xs text-slate-500 hover:text-slate-700 underline ml-2"
+              className="text-xs text-purple-400 hover:text-purple-200 underline ml-2"
             >
-              Đóng
+              Close
             </button>
           </div>
         </div>
       )}
 
       {isSuccess && (
-        <div className="mb-4 p-4 bg-success-50 border border-success-200 rounded-xl">
-          <p className="text-sm text-success-700 font-medium">
+        <div className="mb-4 p-4 bg-emerald-900/30 border border-emerald-700/50 rounded-xl">
+          <p className="text-sm text-emerald-200 font-medium">
             ✅ Protection activated successfully!
           </p>
         </div>
@@ -262,14 +272,14 @@ export default function ProtectionPanel() {
 
       {/* Position Already Exists Warning */}
       {hasPosition && (
-        <div className="mb-4 p-4 bg-warning-50 border border-warning-200 rounded-xl flex items-start space-x-3">
-          <AlertCircle className="w-5 h-5 text-warning-600 flex-shrink-0 mt-0.5" />
+        <div className="mb-4 p-4 bg-orange-900/30 border border-orange-700/50 rounded-xl flex items-start space-x-3">
+          <AlertCircle className="w-5 h-5 text-orange-300 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm font-semibold text-warning-900 mb-1">
-              Bạn đã có một position đang active
+            <p className="text-sm font-semibold text-orange-200 mb-1">
+              You already have an active position
             </p>
-            <p className="text-xs text-warning-700">
-              Vui lòng close position hiện tại trước khi tạo position mới. Bạn có thể close position trong phần "Your Position".
+            <p className="text-xs text-orange-300">
+              Please close your current position before creating a new one. You can close it in the "Your Position" section below.
             </p>
           </div>
         </div>
@@ -277,19 +287,19 @@ export default function ProtectionPanel() {
 
       {/* Approve Error */}
       {approveError && (
-        <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+        <div className="mb-4 p-3 bg-purple-800/30 border border-purple-700/30 rounded-lg">
           <div className="flex items-start justify-between">
             <div className="flex items-start space-x-2 flex-1">
-              <AlertCircle className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-slate-700">
-                {isApproveUserRejection ? 'Đã hủy approval' : 'Approval thất bại'}
+              <AlertCircle className="w-4 h-4 text-purple-300 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-purple-200">
+                {isApproveUserRejection ? 'Approval cancelled' : 'Approval failed'}
               </p>
             </div>
             <button
               onClick={() => resetApprove()}
-              className="text-xs text-slate-500 hover:text-slate-700 underline ml-2"
+              className="text-xs text-purple-400 hover:text-purple-200 underline ml-2"
             >
-              Đóng
+              Close
             </button>
           </div>
         </div>
@@ -298,7 +308,7 @@ export default function ProtectionPanel() {
       <div className="space-y-6">
         {/* Collateral Amount */}
         <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-2">
+          <label className="block text-sm font-semibold text-purple-200 mb-2">
             Collateral Amount (USDC)
           </label>
           <input
@@ -311,14 +321,14 @@ export default function ProtectionPanel() {
             className="input-field"
             disabled={isPending || isConfirming || hasPosition}
           />
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-purple-400 mt-1">
             Amount of USDC to use as collateral
           </p>
         </div>
 
         {/* Target Currency */}
         <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-2">
+          <label className="block text-sm font-semibold text-purple-200 mb-2">
             Currency to Hedge
           </label>
           <select
@@ -335,7 +345,7 @@ export default function ProtectionPanel() {
 
         {/* Protection Level Slider */}
         <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-4">
+          <label className="block text-sm font-semibold text-purple-200 mb-4">
             Protection Level
           </label>
           <ProtectionSlider
@@ -351,15 +361,15 @@ export default function ProtectionPanel() {
                 disabled={isPending || isConfirming || hasPosition}
                 className={`p-4 rounded-xl border-2 transition-all ${
                   protectionLevel === level.value
-                    ? 'border-primary-500 bg-primary-50'
-                    : 'border-slate-200 hover:border-slate-300'
+                    ? 'border-purple-500 bg-purple-800/50'
+                    : 'border-purple-700/30 hover:border-purple-600/50 bg-purple-900/20'
                 }`}
               >
-                <div className="font-semibold text-slate-900">{level.label}</div>
-                <div className="text-xs text-slate-600 mt-1">
+                <div className="font-semibold text-white">{level.label}</div>
+                <div className="text-xs text-purple-300 mt-1">
                   LTV: {level.ltv}
                 </div>
-                <div className="text-xs text-slate-500 mt-1">
+                <div className="text-xs text-purple-400 mt-1">
                   {level.description}
                 </div>
               </button>
@@ -400,4 +410,3 @@ export default function ProtectionPanel() {
     </div>
   )
 }
-

@@ -107,6 +107,9 @@ export default function PositionDashboard() {
     abi: ROUTER_ABI,
     functionName: 'hasPosition',
     args: address ? [address] : undefined,
+    query: {
+      refetchInterval: 3000, // Auto-refetch every 3 seconds
+    },
   })
 
   // Refetch hasPosition after closing position
@@ -114,7 +117,7 @@ export default function PositionDashboard() {
     if (isClosed && refetchHasPosition) {
       const timer = setTimeout(() => {
         refetchHasPosition()
-      }, 2000) // Wait for blockchain to update
+      }, 2000)
       return () => clearTimeout(timer)
     }
   }, [isClosed, refetchHasPosition])
@@ -124,20 +127,26 @@ export default function PositionDashboard() {
     abi: ROUTER_ABI,
     functionName: 'getPosition',
     args: address ? [address] : undefined,
+    query: {
+      refetchInterval: hasPosition ? 3000 : false, // Auto-refetch every 3 seconds if has position
+    },
   })
 
   const { data: positionDetails } = useReadContract({
     address: positionAddress ? (positionAddress as `0x${string}`) : undefined,
     abi: POSITION_ABI,
     functionName: 'getPositionDetails',
+    query: {
+      refetchInterval: positionAddress ? 3000 : false, // Auto-refetch every 3 seconds if has position
+    },
   })
 
   if (!hasPosition || !positionDetails) {
     return (
       <div className="card">
         <div className="text-center py-8">
-          <p className="text-slate-500">No active position</p>
-          <p className="text-sm text-slate-400 mt-2">
+          <p className="text-purple-300">No active position</p>
+          <p className="text-sm text-purple-400 mt-2">
             Activate protection to see your position details here
           </p>
         </div>
@@ -169,113 +178,112 @@ export default function PositionDashboard() {
   const safetyBufferNum = Number(safetyBuffer) / 100
 
   const levelNames = ['Low', 'Medium', 'High']
-  const levelColors = ['success', 'warning', 'danger']
+  const levelBgColors = ['bg-emerald-900/30', 'bg-orange-900/30', 'bg-red-900/30']
+  const levelTextColors = ['text-emerald-300', 'text-orange-300', 'text-red-300']
 
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-slate-900">Your Position</h2>
-        <span
-          className={`px-3 py-1 rounded-full text-xs font-semibold bg-${levelColors[level]}-100 text-${levelColors[level]}-700`}
-        >
+        <h2 className="text-2xl font-bold text-white">Your Position</h2>
+        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${levelBgColors[level]} ${levelTextColors[level]} border border-purple-700/30`}>
           {levelNames[level]} Protection
         </span>
       </div>
 
       <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="bg-slate-50 rounded-xl p-4">
-          <div className="text-sm text-slate-600 mb-1">Collateral</div>
-          <div className="text-2xl font-bold text-slate-900">
+        <div className="bg-purple-800/30 border border-purple-700/30 rounded-xl p-4">
+          <div className="text-sm text-purple-300 mb-1">Collateral</div>
+          <div className="text-2xl font-bold text-white">
             {collateralNum.toLocaleString('en-US', {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
             })}
           </div>
-          <div className="text-xs text-slate-500 mt-1">USDC</div>
+          <div className="text-xs text-purple-400 mt-1">USDC</div>
         </div>
 
-        <div className="bg-slate-50 rounded-xl p-4">
-          <div className="text-sm text-slate-600 mb-1">Debt</div>
-          <div className="text-2xl font-bold text-slate-900">
+        <div className="bg-purple-800/30 border border-purple-700/30 rounded-xl p-4">
+          <div className="text-sm text-purple-300 mb-1">Debt</div>
+          <div className="text-2xl font-bold text-white">
             {debtNum.toLocaleString('en-US', {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
             })}
           </div>
-          <div className="text-xs text-slate-500 mt-1">USDC</div>
+          <div className="text-xs text-purple-400 mt-1">USDC</div>
         </div>
       </div>
 
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-semibold text-slate-700">
+          <span className="text-sm font-semibold text-purple-200">
             Health Factor
           </span>
           <span
             className={`text-lg font-bold ${
               healthFactorNum >= 1.5
-                ? 'text-success-600'
+                ? 'text-emerald-400'
                 : healthFactorNum >= 1.3
-                ? 'text-warning-600'
+                ? 'text-orange-400'
                 : healthFactorNum >= 1.15
-                ? 'text-danger-600'
-                : 'text-danger-700'
+                ? 'text-red-400'
+                : 'text-red-500'
             }`}
           >
             {healthFactorNum.toFixed(2)}
           </span>
         </div>
-        <div className="h-3 bg-slate-200 rounded-full overflow-hidden">
+        <div className="h-3 bg-purple-950/50 rounded-full overflow-hidden border border-purple-800/30">
           <div
             className={`h-full transition-all duration-300 ${
               healthFactorNum >= 1.5
-                ? 'bg-success-500'
+                ? 'bg-emerald-500'
                 : healthFactorNum >= 1.3
-                ? 'bg-warning-500'
+                ? 'bg-orange-500'
                 : healthFactorNum >= 1.15
-                ? 'bg-danger-500'
-                : 'bg-danger-700'
+                ? 'bg-red-500'
+                : 'bg-red-600'
             }`}
             style={{ width: `${Math.min((healthFactorNum / 2) * 100, 100)}%` }}
           />
         </div>
       </div>
 
-      <div className="bg-primary-50 border border-primary-200 rounded-xl p-4 mb-6">
+      <div className="bg-indigo-900/30 border border-indigo-700/50 rounded-xl p-4 mb-6">
         <div className="flex items-center space-x-2 mb-2">
-          <TrendingUp className="w-5 h-5 text-primary-600" />
-          <span className="text-sm font-semibold text-primary-900">
+          <TrendingUp className="w-5 h-5 text-indigo-300" />
+          <span className="text-sm font-semibold text-white">
             Safety Buffer
           </span>
         </div>
-        <div className="text-2xl font-bold text-primary-700">
+        <div className="text-2xl font-bold text-indigo-300">
           {safetyBufferNum.toFixed(1)}%
         </div>
-        <p className="text-xs text-primary-600 mt-1">
+        <p className="text-xs text-indigo-200 mt-1">
           Price can move this much before risk increases
         </p>
       </div>
 
       {/* Close Error */}
       {closeError && (
-        <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+        <div className="mb-4 p-3 bg-purple-800/30 border border-purple-700/30 rounded-lg">
           <div className="flex items-start justify-between">
             <div className="flex items-start space-x-2 flex-1">
-              <AlertCircle className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-slate-700">
+              <AlertCircle className="w-4 h-4 text-purple-300 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-purple-200">
                 {closeError.message?.toLowerCase().includes('user rejected') ||
                 closeError.message?.toLowerCase().includes('user denied') ||
                 closeError.message?.toLowerCase().includes('rejected') ||
                 (closeError as any)?.code === 4001
-                  ? 'Đã hủy giao dịch'
-                  : closeError.message || 'Close position thất bại'}
+                  ? 'Transaction cancelled'
+                  : closeError.message || 'Failed to close position'}
               </p>
             </div>
             <button
               onClick={() => resetCloseError()}
-              className="text-xs text-slate-500 hover:text-slate-700 underline ml-2"
+              className="text-xs text-purple-400 hover:text-purple-200 underline ml-2"
             >
-              Đóng
+              Close
             </button>
           </div>
         </div>
@@ -283,9 +291,9 @@ export default function PositionDashboard() {
 
       {/* Close Success */}
       {isClosed && (
-        <div className="mb-4 p-4 bg-success-50 border border-success-200 rounded-xl">
-          <p className="text-sm text-success-700 font-medium">
-            ✅ Position đã được close thành công!
+        <div className="mb-4 p-4 bg-emerald-900/30 border border-emerald-700/50 rounded-xl">
+          <p className="text-sm text-emerald-200 font-medium">
+            ✅ Position closed successfully!
           </p>
         </div>
       )}
@@ -301,7 +309,7 @@ export default function PositionDashboard() {
         <button
           onClick={handleClose}
           disabled={isClosing || isReducing || isConfirmingClose}
-          className="btn-primary flex-1 bg-danger-600 hover:bg-danger-700"
+          className="flex-1 bg-gradient-to-r from-red-600 to-red-700 text-white font-semibold py-3 px-6 rounded-xl hover:from-red-700 hover:to-red-800 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isClosing || isConfirmingClose ? 'Closing...' : 'Close Position'}
         </button>
@@ -309,31 +317,39 @@ export default function PositionDashboard() {
 
       {/* Reduce Protection Modal */}
       {showReduceModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gradient-to-br from-purple-900 to-indigo-900 border border-purple-700/50 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-slate-900">Reduce Protection</h3>
+              <h3 className="text-xl font-bold text-white">Reduce Protection</h3>
               <button
                 onClick={() => {
                   setShowReduceModal(false)
                   setReduceAmount('')
                   setError('')
                 }}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-purple-400 hover:text-purple-200 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {error && (
-              <div className="mb-4 p-3 bg-danger-50 border border-danger-200 rounded-xl flex items-start space-x-2">
-                <AlertCircle className="w-4 h-4 text-danger-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-danger-700">{error}</p>
+              <div className="mb-4 p-3 bg-red-900/30 border border-red-700/50 rounded-xl flex items-start space-x-2">
+                <AlertCircle className="w-4 h-4 text-red-300 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-red-200">{error}</p>
+              </div>
+            )}
+
+            {isReduced && (
+              <div className="mb-4 p-3 bg-emerald-900/30 border border-emerald-700/50 rounded-xl">
+                <p className="text-sm text-emerald-200 font-medium">
+                  ✅ Protection reduced successfully!
+                </p>
               </div>
             )}
 
             <div className="mb-4">
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label className="block text-sm font-semibold text-purple-200 mb-2">
                 Amount to Repay (USDC)
               </label>
               <input
@@ -347,7 +363,7 @@ export default function PositionDashboard() {
                 className="input-field"
                 disabled={isReducing || isConfirmingReduce}
               />
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-purple-400 mt-1">
                 Current debt: {debtNum.toFixed(2)} USDC
               </p>
             </div>
@@ -418,8 +434,5 @@ export default function PositionDashboard() {
       functionName: 'reduceProtection',
       args: [repayAmount],
     })
-
-    // Modal will close when isReduced becomes true (handled by useEffect)
   }
 }
-

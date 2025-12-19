@@ -12,29 +12,29 @@ export default function ProtectionSlider({
   disabled = false,
 }: ProtectionSliderProps) {
   const levels = [
-    { label: 'Low', color: 'bg-success-500' },
-    { label: 'Medium', color: 'bg-warning-500' },
-    { label: 'High', color: 'bg-danger-500' },
+    { label: 'Low', color: 'bg-emerald-500' },
+    { label: 'Medium', color: 'bg-orange-500' },
+    { label: 'High', color: 'bg-red-500' },
   ]
 
   return (
     <div className="relative">
       {/* Slider Track */}
-      <div className="h-3 bg-slate-200 rounded-full relative">
+      <div className="h-3 bg-purple-950/50 border border-purple-800/30 rounded-full relative">
         {/* Active Segment */}
         <div
           className={`absolute top-0 left-0 h-full rounded-full transition-all duration-300 ${
             value === 0
-              ? 'w-1/3 bg-success-500'
+              ? 'w-1/3 bg-emerald-500'
               : value === 1
-              ? 'w-2/3 bg-warning-500'
-              : 'w-full bg-danger-500'
+              ? 'w-2/3 bg-orange-500'
+              : 'w-full bg-red-500'
           }`}
         />
 
         {/* Slider Handle */}
         <div
-          className={`absolute top-1/2 -translate-y-1/2 w-6 h-6 bg-white rounded-full shadow-lg border-2 border-primary-500 cursor-pointer transition-all duration-300 ${
+          className={`absolute top-1/2 -translate-y-1/2 w-6 h-6 bg-white rounded-full shadow-lg border-2 border-purple-500 cursor-pointer transition-all duration-300 ${
             disabled ? 'opacity-50 cursor-not-allowed' : 'hover:scale-110'
           }`}
           style={{
@@ -60,8 +60,8 @@ export default function ProtectionSlider({
             disabled={disabled}
             className={`text-xs font-medium transition-colors ${
               value === index
-                ? 'text-slate-900'
-                : 'text-slate-400 hover:text-slate-600'
+                ? 'text-white'
+                : 'text-purple-400 hover:text-purple-200'
             } ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
           >
             {level.label}
@@ -71,4 +71,3 @@ export default function ProtectionSlider({
     </div>
   )
 }
-

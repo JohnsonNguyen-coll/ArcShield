@@ -75,14 +75,14 @@ export default function PriceDisplay({ oracleAddress, currency }: PriceDisplayPr
   }
 
   return (
-    <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+    <div className="bg-purple-800/30 border border-purple-700/30 rounded-xl p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center space-x-2">
-          <span className="text-sm font-semibold text-slate-900">
+          <span className="text-sm font-semibold text-white">
             {currencyNames[currency]}
           </span>
           {isStale && (
-            <span className="text-xs px-2 py-0.5 bg-warning-100 text-warning-700 rounded">
+            <span className="text-xs px-2 py-0.5 bg-orange-900/50 text-orange-300 rounded border border-orange-700/50">
               Stale
             </span>
           )}
@@ -90,7 +90,7 @@ export default function PriceDisplay({ oracleAddress, currency }: PriceDisplayPr
         <button
           onClick={fetchApiPrice}
           disabled={isRefreshing}
-          className="text-slate-500 hover:text-slate-700 transition-colors"
+          className="text-purple-400 hover:text-purple-200 transition-colors"
           title="Refresh price"
         >
           <RefreshCw
@@ -98,10 +98,9 @@ export default function PriceDisplay({ oracleAddress, currency }: PriceDisplayPr
           />
         </button>
       </div>
-      <div className="text-lg font-bold text-slate-900">
+      <div className="text-lg font-bold text-purple-100">
         1 {currency} = ${displayRate.toFixed(4)} USD
       </div>
     </div>
   )
 }
-

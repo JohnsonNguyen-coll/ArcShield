@@ -33,3 +33,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+ORACLE_SETUP.md
+DEPLOYMENT.md
+CRON_SETUP.md
