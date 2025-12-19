@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useReadContract } from 'wagmi'
-import { RefreshCw, TrendingUp, TrendingDown } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { fetchExchangeRates, rateFrom8Decimals } from '@/lib/priceService'
 
 const PRICE_ORACLE_ABI = [
@@ -66,7 +66,8 @@ export default function PriceDisplay({ oracleAddress, currency }: PriceDisplayPr
     : null
   const isStale = onChainPrice ? (onChainPrice as [bigint, boolean])[1] : false
 
-  const displayRate = onChainRate || apiRate || 0
+  // Ưu tiên hiển thị giá API (real-time), nếu không có thì dùng on-chain
+  const displayRate = apiRate || onChainRate || 0
   const currencyNames = {
     BRL: 'Brazilian Real',
     MXN: 'Mexican Peso',
@@ -100,17 +101,6 @@ export default function PriceDisplay({ oracleAddress, currency }: PriceDisplayPr
       <div className="text-lg font-bold text-slate-900">
         1 {currency} = ${displayRate.toFixed(4)} USD
       </div>
-      {onChainRate && apiRate && (
-        <div className="text-xs text-slate-500 mt-1">
-          {onChainRate !== apiRate ? (
-            <span className="text-warning-600">
-              On-chain: ${onChainRate.toFixed(4)} • API: ${apiRate.toFixed(4)}
-            </span>
-          ) : (
-            <span className="text-success-600">✓ Synced</span>
-          )}
-        </div>
-      )}
     </div>
   )
 }
