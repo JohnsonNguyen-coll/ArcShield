@@ -1,14 +1,12 @@
 'use client'
 
 import { WagmiProvider, createConfig, http } from 'wagmi'
-import { getDefaultConfig } from '@rainbow-me/rainbowkit'
 import { RainbowKitProvider } from '@rainbow-me/rainbowkit'
+import { injected, walletConnect } from 'wagmi/connectors'
 import '@rainbow-me/rainbowkit/styles.css'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 
-// Arc Testnet configuration
-// Chain ID theo Arc docs: https://docs.arc.network/arc/references/connect-to-arc
 const arcTestnet = {
   id: 5042002,
   name: 'Arc Testnet',
@@ -27,10 +25,14 @@ const arcTestnet = {
   testnet: true,
 } as const
 
-const config = getDefaultConfig({
-  appName: 'ArcShield',
-  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'arcshield-protection-protocol',
+const config = createConfig({
   chains: [arcTestnet],
+  connectors: [
+    injected(), // ✅ MetaMask, Brave, OKX, Coin98 — KHÔNG SDK
+    walletConnect({
+      projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
+    }),
+  ],
   transports: {
     [arcTestnet.id]: http('https://rpc.testnet.arc.network'),
   },
@@ -49,4 +51,3 @@ export function Providers({ children }: { children: React.ReactNode }) {
     </WagmiProvider>
   )
 }
-
