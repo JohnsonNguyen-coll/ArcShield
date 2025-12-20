@@ -1,0 +1,38 @@
+name: Update Oracle Price Daily
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  
+  workflow_dispatch:
+
+jobs:
+  update-oracle:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Call Update Oracle API
+        run: |
+          echo "Starting oracle update..."
+          
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            https://arcshield.netlify.app/api/update-oracle \
+            -H "Content-Type: application/json")
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          
+          echo "HTTP Status: $http_code"
+          echo "Response Body: $body"
+          
+          if [ $http_code -eq 200 ] || [ $http_code -eq 201 ]; then
+            echo "✅ Oracle update successful!"
+          else
+            echo "❌ Oracle update failed with status $http_code"
+            exit 1
+          fi
+      
+      - name: Send notification on failure
+        if: failure()
+        run: |
+          echo "⚠️ Oracle update failed! Check the logs above for details."
