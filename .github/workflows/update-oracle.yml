@@ -15,9 +15,18 @@ jobs:
         run: |
           echo "Starting oracle update..."
           
-          response=$(curl -s -w "\n%{http_code}" -X POST \
-            https://arcshield.netlify.app/api/update-oracle \
-            -H "Content-Type: application/json")
+          # Use GET method (API route only accepts GET)
+          # Add Authorization header if API key is provided
+          if [ -n "${{ secrets.ORACLE_UPDATE_API_KEY }}" ]; then
+            response=$(curl -s -w "\n%{http_code}" -X GET \
+              https://arcshield.netlify.app/api/update-oracle \
+              -H "Authorization: Bearer ${{ secrets.ORACLE_UPDATE_API_KEY }}" \
+              -H "Content-Type: application/json")
+          else
+            response=$(curl -s -w "\n%{http_code}" -X GET \
+              https://arcshield.netlify.app/api/update-oracle \
+              -H "Content-Type: application/json")
+          fi
           
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
