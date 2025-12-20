@@ -8,6 +8,9 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: 'ArcShield - FX Protection Protocol',
   description: 'Non-custodial stablecoin FX protection protocol on Arc Network',
+  icons: {
+    icon: '/favicon.svg',
+  },
 }
 
 export default function RootLayout({
