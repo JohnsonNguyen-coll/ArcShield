@@ -2,8 +2,9 @@
 
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { formatUnits, parseUnits } from 'viem'
-import { TrendingUp, TrendingDown, X, AlertCircle } from 'lucide-react'
+import { TrendingUp, X, AlertCircle, ShieldCheck, Coins, Globe2 } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { fetchExchangeRates } from '@/lib/priceService'
 
 const ROUTER_ABI = [
   {
@@ -59,14 +60,50 @@ const POSITION_ABI = [
     stateMutability: 'nonpayable',
     type: 'function',
   },
+  {
+    inputs: [],
+    name: 'targetCurrency',
+    outputs: [{ name: '', type: 'string' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'createdAt',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'entryRate',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const
+
+const PRICE_ORACLE_ABI = [
+  {
+    inputs: [{ name: 'currency', type: 'string' }],
+    name: 'getPrice',
+    outputs: [
+      { name: 'rate', type: 'uint256' },
+      { name: 'isStale', type: 'bool' },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
 ] as const
 
 export default function PositionDashboard() {
   const { address } = useAccount()
   const routerAddress = process.env.NEXT_PUBLIC_ARCSHIELD_ROUTER_ADDRESS as `0x${string}`
+  const oracleAddress = process.env.NEXT_PUBLIC_PRICE_ORACLE_ADDRESS as `0x${string}`
   const [showReduceModal, setShowReduceModal] = useState(false)
   const [reduceAmount, setReduceAmount] = useState('')
   const [error, setError] = useState('')
+  const [apiRate, setApiRate] = useState<number | null>(null)
 
   const { 
     writeContract: writeClose, 
@@ -141,6 +178,63 @@ export default function PositionDashboard() {
     },
   })
 
+  const { data: targetCurrency } = useReadContract({
+    address: positionAddress ? (positionAddress as `0x${string}`) : undefined,
+    abi: POSITION_ABI,
+    functionName: 'targetCurrency',
+    query: {
+      refetchInterval: positionAddress ? 3000 : false,
+    },
+  })
+
+  const { data: createdAt } = useReadContract({
+    address: positionAddress ? (positionAddress as `0x${string}`) : undefined,
+    abi: POSITION_ABI,
+    functionName: 'createdAt',
+    query: {
+      refetchInterval: positionAddress ? 3000 : false,
+    },
+  })
+
+  const { data: entryRateRaw } = useReadContract({
+    address: positionAddress ? (positionAddress as `0x${string}`) : undefined,
+    abi: POSITION_ABI,
+    functionName: 'entryRate',
+    query: {
+      refetchInterval: positionAddress ? 30000 : false,
+    },
+  })
+
+  const { data: onChainRate } = useReadContract({
+    address: oracleAddress && targetCurrency ? oracleAddress : undefined,
+    abi: PRICE_ORACLE_ABI,
+    functionName: 'getPrice',
+    args: targetCurrency ? [targetCurrency as string] : undefined,
+    query: {
+      refetchInterval: targetCurrency ? 15000 : false,
+    },
+  })
+
+  useEffect(() => {
+    const loadApiRate = async () => {
+      try {
+        const rates = await fetchExchangeRates()
+        if (targetCurrency) {
+          const currency = targetCurrency as 'BRL' | 'MXN' | 'EUR'
+          setApiRate(rates[currency] ?? null)
+        }
+      } catch (err) {
+        console.error('Failed to fetch FX rate', err)
+      }
+    }
+
+    if (targetCurrency) {
+      loadApiRate()
+      const id = setInterval(loadApiRate, 30000)
+      return () => clearInterval(id)
+    }
+  }, [targetCurrency])
+
   if (!hasPosition || !positionDetails) {
     return (
       <div className="card">
@@ -176,6 +270,31 @@ export default function PositionDashboard() {
   const collateralNum = Number(formatUnits(collateral, 6))
   const debtNum = Number(formatUnits(debt, 6))
   const safetyBufferNum = Number(safetyBuffer) / 100
+  const levelLtvPercents = [20, 35, 50]
+  const valueProtectedPct = levelLtvPercents[level] ?? 0
+  const entryFxRate =
+    entryRateRaw && typeof entryRateRaw === 'bigint'
+      ? Number(entryRateRaw) / 1e8
+      : null
+
+  const currentFxRate =
+    apiRate ??
+    (onChainRate ? Number((onChainRate as [bigint, boolean])[0]) / 1e8 : null)
+  const isRateStale = onChainRate ? (onChainRate as [bigint, boolean])[1] : false
+
+  const fxChangePct =
+    entryFxRate && currentFxRate
+      ? ((currentFxRate - entryFxRate) / entryFxRate) * 100
+      : null
+
+  // Estimate: assume hedge notional ~= borrowed USDC (debtNum)
+  const lossAvoidedEstimate: number | null =
+    fxChangePct !== null ? (debtNum * fxChangePct) / 100 : null
+
+  const createdAtDate =
+    createdAt && typeof createdAt === 'bigint'
+      ? new Date(Number(createdAt) * 1000)
+      : null
 
   const levelNames = ['Low', 'Medium', 'High']
   const levelBgColors = ['bg-emerald-900/30', 'bg-orange-900/30', 'bg-red-900/30']
@@ -262,6 +381,113 @@ export default function PositionDashboard() {
         <p className="text-xs text-indigo-200 mt-1">
           Price can move this much before risk increases
         </p>
+      </div>
+
+      <div className="bg-purple-900/30 border border-purple-800/40 rounded-xl p-4 mb-6">
+        <div className="flex items-center space-x-2 mb-3">
+          <ShieldCheck className="w-5 h-5 text-purple-200" />
+          <div>
+            <p className="text-sm font-semibold text-white">Protection Outcome</p>
+            <p className="text-xs text-purple-300">Estimated coverage and avoided loss</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="bg-purple-800/30 border border-purple-700/30 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-purple-300">Value Protected</span>
+              <TrendingUp className="w-4 h-4 text-emerald-300" />
+            </div>
+            <div className="text-2xl font-bold text-white">
+              {valueProtectedPct.toFixed(1)}%
+            </div>
+            <p className="text-[11px] text-purple-400 mt-1">
+              Based on collateral vs total exposure
+            </p>
+          </div>
+
+          <div className="bg-purple-800/30 border border-purple-700/30 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-purple-300">Loss Avoided (est.)</span>
+              <Coins className="w-4 h-4 text-indigo-300" />
+            </div>
+            {lossAvoidedEstimate === null ? (
+              <div className="text-sm text-purple-300">
+                Chưa có đủ dữ liệu (cần entry FX rate)
+              </div>
+            ) : (
+              <>
+                <div className="text-2xl font-bold text-white">
+                  {lossAvoidedEstimate.toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}{' '}
+                  USDC
+                </div>
+                <p className="text-[11px] text-purple-400 mt-1">
+                  Uses safety buffer as downside protection proxy
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-indigo-900/30 border border-indigo-800/40 rounded-xl p-4 mb-6">
+        <div className="flex items-center space-x-2 mb-3">
+          <Globe2 className="w-5 h-5 text-indigo-200" />
+          <div>
+            <p className="text-sm font-semibold text-white">FX Info</p>
+            <p className="text-xs text-indigo-300">Target currency & entry context</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="bg-indigo-800/30 border border-indigo-700/30 rounded-lg p-3">
+            <div className="text-xs text-indigo-200 mb-1">Target Currency</div>
+            <div className="text-lg font-semibold text-white">
+              {targetCurrency ? (targetCurrency as string) : '—'}
+            </div>
+          </div>
+
+          <div className="bg-indigo-800/30 border border-indigo-700/30 rounded-lg p-3">
+            <div className="text-xs text-indigo-200 mb-1">Entry Time</div>
+            <div className="text-sm font-semibold text-white">
+              {createdAtDate
+                ? createdAtDate.toLocaleString()
+                : 'Chưa có (contract không lưu?)'}
+            </div>
+          </div>
+
+          <div className="bg-indigo-800/30 border border-indigo-700/30 rounded-lg p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-indigo-200">Entry FX Rate</span>
+            </div>
+            <div className="text-lg font-semibold text-white">
+              {entryFxRate ? `$${entryFxRate.toFixed(4)} USD` : 'Đang lấy...'}
+            </div>
+            <p className="text-[11px] text-indigo-300 mt-1">
+              Lưu từ oracle lúc mở vị thế
+            </p>
+          </div>
+
+          <div className="bg-indigo-800/30 border border-indigo-700/30 rounded-lg p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-indigo-200">Current FX Rate</span>
+              {isRateStale && (
+                <span className="text-[11px] px-2 py-0.5 bg-orange-900/40 text-orange-200 rounded border border-orange-700/50">
+                  Stale
+                </span>
+              )}
+            </div>
+            <div className="text-lg font-semibold text-white">
+              {currentFxRate ? `$${currentFxRate.toFixed(4)} USD` : 'Đang lấy giá...'}
+            </div>
+            <p className="text-[11px] text-indigo-300 mt-1">
+              Ưu tiên API; fallback on-chain oracle
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Close Error */}
