@@ -3,9 +3,28 @@
 import { useState, useEffect } from 'react'
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi'
 import { Shield, AlertCircle } from 'lucide-react'
-import { parseUnits, formatUnits } from 'viem'
+import { parseUnits, formatUnits, createPublicClient, http } from 'viem'
 import ProtectionSlider from './ProtectionSlider'
 import { fetchExchangeRates, rateFrom8Decimals } from '@/lib/priceService'
+
+// Arc Testnet configuration (same as API route)
+const arcTestnet = {
+  id: 5042002,
+  name: 'Arc Testnet',
+  network: 'arc-testnet',
+  nativeCurrency: {
+    decimals: 18,
+    name: 'USDC',
+    symbol: 'USDC',
+  },
+  rpcUrls: {
+    default: { http: ['https://rpc.testnet.arc.network'] },
+  },
+  blockExplorers: {
+    default: { name: 'ArcScan', url: 'https://testnet.arcscan.app' },
+  },
+  testnet: true,
+} as const
 
 // Contract ABI (simplified - in production, import from artifacts)
 const ROUTER_ABI = [
@@ -38,6 +57,16 @@ const PRICE_ORACLE_ABI = [
       { name: 'isStale', type: 'bool' },
     ],
     stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'currencies', type: 'string[]' },
+      { name: 'rates', type: 'uint256[]' },
+    ],
+    name: 'updatePrices',
+    outputs: [],
+    stateMutability: 'nonpayable',
     type: 'function',
   },
 ] as const
@@ -80,6 +109,7 @@ export default function ProtectionPanel() {
   const [protectionLevel, setProtectionLevel] = useState<0 | 1 | 2>(1)
   const [error, setError] = useState('')
   const [exchangeRates, setExchangeRates] = useState<ExchangeRates | null>(null)
+  const [isSyncingOracle, setIsSyncingOracle] = useState(false)
 
   const routerAddress = process.env.NEXT_PUBLIC_ARCSHIELD_ROUTER_ADDRESS as `0x${string}`
   const oracleAddress = process.env.NEXT_PUBLIC_PRICE_ORACLE_ADDRESS as `0x${string}`
@@ -240,9 +270,114 @@ export default function ProtectionPanel() {
       return
     }
 
+    // Prevent multiple simultaneous activations
+    if (isPending || isSyncingOracle) {
+      return
+    }
+
     setError('')
 
     try {
+      // Sync Oracle with API rate before activating to ensure Entry Rate matches PriceDisplay
+      const apiRate = exchangeRates?.[targetCurrency as keyof ExchangeRates]
+      const onChainPriceData = 
+        targetCurrency === 'BRL' ? onChainPriceBRL :
+        targetCurrency === 'MXN' ? onChainPriceMXN :
+        onChainPriceEUR
+      
+      if (apiRate && onChainPriceData) {
+        const onChainRate = rateFrom8Decimals((onChainPriceData as [bigint, boolean])[0])
+        const rateDiff = Math.abs(apiRate - onChainRate)
+        const rateDiffPct = (rateDiff / apiRate) * 100
+        
+        // If on-chain Oracle rate differs from API rate by more than 0.1%, try to sync
+        if (rateDiffPct > 0.1) {
+          setIsSyncingOracle(true)
+          try {
+            // Try to call API endpoint to update Oracle
+            const response = await fetch('/api/update-oracle', {
+              method: 'GET',
+              cache: 'no-cache',
+            })
+              
+            if (response.ok) {
+              const result = await response.json()
+              const txHash = result.transactionHash
+              
+              if (txHash) {
+                // Create public client to wait for transaction
+                const client = createPublicClient({
+                  chain: arcTestnet,
+                  transport: http(),
+                })
+                
+                // Wait for the Oracle update transaction to be confirmed
+                try {
+                  await client.waitForTransactionReceipt({ 
+                    hash: txHash as `0x${string}`,
+                    timeout: 30000 // 30 seconds timeout
+                  })
+                  
+                  // Verify the on-chain rate was updated (poll up to 5 times with 2s delay)
+                  let verified = false
+                  for (let i = 0; i < 5; i++) {
+                    await new Promise(resolve => setTimeout(resolve, 2000))
+                    
+                    // Refetch on-chain price
+                    const updatedPriceData = await client.readContract({
+                      address: oracleAddress,
+                      abi: PRICE_ORACLE_ABI,
+                      functionName: 'getPrice',
+                      args: [targetCurrency],
+                    })
+                    
+                    const updatedRate = rateFrom8Decimals((updatedPriceData as [bigint, boolean])[0])
+                    const newRateDiff = Math.abs(apiRate - updatedRate)
+                    const newRateDiffPct = (newRateDiff / apiRate) * 100
+                    
+                    // If rate is now within 0.1% of API rate, consider it verified
+                    if (newRateDiffPct <= 0.1) {
+                      verified = true
+                      break
+                    }
+                  }
+                  
+                  if (!verified) {
+                    // Get final on-chain rate for warning
+                    const finalPriceData = await client.readContract({
+                      address: oracleAddress,
+                      abi: PRICE_ORACLE_ABI,
+                      functionName: 'getPrice',
+                      args: [targetCurrency],
+                    })
+                    const finalRate = rateFrom8Decimals((finalPriceData as [bigint, boolean])[0])
+                    setError(`Warning: Oracle was updated but rate may still differ. Entry Rate will be ${finalRate.toFixed(4)} (on-chain) instead of ${apiRate.toFixed(4)} (API). The position will still be created.`)
+                  }
+                } catch (waitError: any) {
+                  console.error('Error waiting for Oracle update:', waitError)
+                  setError(`Warning: Oracle update transaction sent but confirmation timed out. Entry Rate may be ${onChainRate.toFixed(4)} (on-chain) instead of ${apiRate.toFixed(4)} (API). The position will still be created.`)
+                }
+              } else {
+                // No transaction hash in response, but API call succeeded
+                // Wait a bit and proceed
+                await new Promise(resolve => setTimeout(resolve, 5000))
+              }
+            } else {
+              const errorData = await response.json().catch(() => ({}))
+              // Show warning but allow user to proceed
+              setError(`Warning: Could not update Oracle automatically. Entry Rate will be ${onChainRate.toFixed(4)} (on-chain) instead of ${apiRate.toFixed(4)} (API). The position will still be created, but Entry Rate may differ from the displayed price.`)
+              // Don't return - allow activation to proceed with warning
+            }
+          } catch (syncError: any) {
+            // Show warning but allow activation to proceed
+            setError(`Warning: Could not sync Oracle. Entry Rate will be ${onChainRate.toFixed(4)} (on-chain) instead of ${apiRate.toFixed(4)} (API). You can still proceed, but Entry Rate may differ from displayed price.`)
+            // Don't return - allow activation to proceed with warning
+          } finally {
+            setIsSyncingOracle(false)
+          }
+        }
+      }
+
       const amount = parseUnits(collateralAmount, 6)
       writeContract({
         address: routerAddress,
@@ -252,6 +387,7 @@ export default function ProtectionPanel() {
       })
     } catch (err: any) {
       setError(err.message || 'Failed to activate protection')
+      setIsSyncingOracle(false)
     }
   }
 
@@ -319,7 +455,7 @@ export default function ProtectionPanel() {
       {isSuccess && (
         <div className="mb-4 p-4 bg-emerald-900/30 border border-emerald-700/50 rounded-xl">
           <p className="text-sm text-emerald-200 font-medium">
-            ✅ Protection activated successfully!
+            Protection activated successfully!
           </p>
         </div>
       )}

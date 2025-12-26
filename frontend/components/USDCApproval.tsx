@@ -137,14 +137,14 @@ export default function USDCApproval({ spender, requiredAmount }: USDCApprovalPr
             <div className="mb-3 p-2 bg-slate-50 border border-slate-200 rounded-lg">
               <p className="text-xs text-slate-700">
                 {isUserRejection 
-                  ? 'Đã hủy' 
+                  ? 'Cancelled' 
                   : approveError.message || 'Approval failed'}
               </p>
               <button
                 onClick={() => resetApprove()}
                 className="text-xs text-slate-500 hover:text-slate-700 mt-1 underline"
               >
-                Đóng
+                Close
               </button>
             </div>
           )}

@@ -66,7 +66,7 @@ export default function PriceDisplay({ oracleAddress, currency }: PriceDisplayPr
     : null
   const isStale = onChainPrice ? (onChainPrice as [bigint, boolean])[1] : false
 
-  // Ưu tiên hiển thị giá API (real-time), nếu không có thì dùng on-chain
+  // Prefer API rate (real-time), fallback to on-chain if unavailable
   const displayRate = apiRate || onChainRate || 0
   const currencyNames = {
     BRL: 'Brazilian Real',

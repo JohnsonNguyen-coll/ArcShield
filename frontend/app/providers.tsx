@@ -28,7 +28,7 @@ const arcTestnet = {
 const config = createConfig({
   chains: [arcTestnet],
   connectors: [
-    injected(), // ✅ MetaMask, Brave, OKX, Coin98 — KHÔNG SDK
+    injected(), // MetaMask, Brave, OKX, Coin98
     walletConnect({
       projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
     }),

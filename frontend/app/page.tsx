@@ -9,10 +9,13 @@ import PositionDashboard from '@/components/PositionDashboard'
 import HealthFactorCard from '@/components/HealthFactorCard'
 import CostTransparency from '@/components/CostTransparency'
 import PriceDisplay from '@/components/PriceDisplay'
+import Navbar from '@/components/Navbar'
+import AddLiquidity from '@/components/AddLiquidity'
 
 export default function Home() {
   const { isConnected } = useAccount()
   const [mounted, setMounted] = useState(false)
+  const [activeTab, setActiveTab] = useState<'position' | 'liquidity'>('position')
 
   useEffect(() => {
     setMounted(true)
@@ -126,42 +129,76 @@ export default function Home() {
           </div>
         ) : isConnected ? (
           <>
-            {/* Connection Notice */}
+            {/* Navbar */}
+            <Navbar activeTab={activeTab} onTabChange={setActiveTab} />
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Left Column - Protection Panel */}
-              <div className="lg:col-span-2 space-y-6">
-                <ProtectionPanel />
-                <PositionDashboard />
-              </div>
+            {activeTab === 'position' ? (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Left Column - Protection Panel */}
+                <div className="lg:col-span-2 space-y-6">
+                  <ProtectionPanel />
+                  <PositionDashboard />
+                </div>
 
-              {/* Right Column - Status Cards */}
-              <div className="space-y-6">
-                <HealthFactorCard />
-                <CostTransparency />
-                
-                {/* Real-time FX Rates */}
-                <div className="card">
-                  <h3 className="text-lg font-semibold text-white mb-4">
-                    Real-time FX Rates
-                  </h3>
-                  <div className="space-y-3">
-                    <PriceDisplay
-                      oracleAddress={process.env.NEXT_PUBLIC_PRICE_ORACLE_ADDRESS as `0x${string}`}
-                      currency="BRL"
-                    />
-                    <PriceDisplay
-                      oracleAddress={process.env.NEXT_PUBLIC_PRICE_ORACLE_ADDRESS as `0x${string}`}
-                      currency="MXN"
-                    />
-                    <PriceDisplay
-                      oracleAddress={process.env.NEXT_PUBLIC_PRICE_ORACLE_ADDRESS as `0x${string}`}
-                      currency="EUR"
-                    />
+                {/* Right Column - Status Cards */}
+                <div className="space-y-6">
+                  <HealthFactorCard />
+                  <CostTransparency />
+                  
+                  {/* Real-time FX Rates */}
+                  <div className="card">
+                    <h3 className="text-lg font-semibold text-white mb-4">
+                      Real-time FX Rates
+                    </h3>
+                    <div className="space-y-3">
+                      <PriceDisplay
+                        oracleAddress={process.env.NEXT_PUBLIC_PRICE_ORACLE_ADDRESS as `0x${string}`}
+                        currency="BRL"
+                      />
+                      <PriceDisplay
+                        oracleAddress={process.env.NEXT_PUBLIC_PRICE_ORACLE_ADDRESS as `0x${string}`}
+                        currency="MXN"
+                      />
+                      <PriceDisplay
+                        oracleAddress={process.env.NEXT_PUBLIC_PRICE_ORACLE_ADDRESS as `0x${string}`}
+                        currency="EUR"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Left Column - Add Liquidity */}
+                <div className="lg:col-span-2">
+                  <AddLiquidity />
+                </div>
+
+                {/* Right Column - Info Cards */}
+                <div className="space-y-6">
+                  {/* Real-time FX Rates */}
+                  <div className="card">
+                    <h3 className="text-lg font-semibold text-white mb-4">
+                      Real-time FX Rates
+                    </h3>
+                    <div className="space-y-3">
+                      <PriceDisplay
+                        oracleAddress={process.env.NEXT_PUBLIC_PRICE_ORACLE_ADDRESS as `0x${string}`}
+                        currency="BRL"
+                      />
+                      <PriceDisplay
+                        oracleAddress={process.env.NEXT_PUBLIC_PRICE_ORACLE_ADDRESS as `0x${string}`}
+                        currency="MXN"
+                      />
+                      <PriceDisplay
+                        oracleAddress={process.env.NEXT_PUBLIC_PRICE_ORACLE_ADDRESS as `0x${string}`}
+                        currency="EUR"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <div className="card max-w-2xl mx-auto text-center py-12">

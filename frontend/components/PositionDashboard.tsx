@@ -2,7 +2,7 @@
 
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { formatUnits, parseUnits } from 'viem'
-import { TrendingUp, X, AlertCircle, ShieldCheck, Coins, Globe2 } from 'lucide-react'
+import { TrendingUp, TrendingDown, X, AlertCircle, ShieldCheck, Coins, Globe2, Info } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { fetchExchangeRates } from '@/lib/priceService'
 
@@ -26,6 +26,24 @@ const ROUTER_ABI = [
     name: 'closeProtection',
     outputs: [],
     stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'settleProtection',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'user', type: 'address' }],
+    name: 'calculateProtectionOutcome',
+    outputs: [
+      { name: 'protectionAmount', type: 'uint256' },
+      { name: 'depreciationPct', type: 'uint256' },
+      { name: 'currentRate', type: 'uint256' },
+    ],
+    stateMutability: 'view',
     type: 'function',
   },
   {
@@ -81,6 +99,23 @@ const POSITION_ABI = [
     stateMutability: 'view',
     type: 'function',
   },
+  {
+    inputs: [],
+    name: 'validateOracle',
+    outputs: [
+      { name: 'isValid', type: 'bool' },
+      { name: 'reason', type: 'string' },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'getSafeExchangeRate',
+    outputs: [{ name: 'safeRate', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
 ] as const
 
 const PRICE_ORACLE_ABI = [
@@ -104,6 +139,7 @@ export default function PositionDashboard() {
   const [reduceAmount, setReduceAmount] = useState('')
   const [error, setError] = useState('')
   const [apiRate, setApiRate] = useState<number | null>(null)
+  const [useSettleProtection, setUseSettleProtection] = useState(false)
 
   const { 
     writeContract: writeClose, 
@@ -111,6 +147,14 @@ export default function PositionDashboard() {
     isPending: isClosing,
     error: closeError,
     reset: resetCloseError,
+  } = useWriteContract()
+  
+  const { 
+    writeContract: writeSettle, 
+    data: settleHash,
+    isPending: isSettling,
+    error: settleError,
+    reset: resetSettleError,
   } = useWriteContract()
   
   const { 
@@ -123,21 +167,15 @@ export default function PositionDashboard() {
     hash: closeHash,
   })
 
+  const { isLoading: isConfirmingSettle, isSuccess: isSettled } = useWaitForTransactionReceipt({
+    hash: settleHash,
+  })
+
   const { isLoading: isConfirmingReduce, isSuccess: isReduced } = useWaitForTransactionReceipt({
     hash: reduceHash,
   })
 
-  // Close modal when reduce is successful
-  useEffect(() => {
-    if (isReduced && showReduceModal) {
-      const timer = setTimeout(() => {
-        setShowReduceModal(false)
-        setReduceAmount('')
-        setError('')
-      }, 2000)
-      return () => clearTimeout(timer)
-    }
-  }, [isReduced, showReduceModal])
+  // Don't auto-close modal - let user close it manually after seeing success message
 
   const { data: hasPosition, refetch: refetchHasPosition } = useReadContract({
     address: address && routerAddress ? routerAddress : undefined,
@@ -149,15 +187,15 @@ export default function PositionDashboard() {
     },
   })
 
-  // Refetch hasPosition after closing position
+  // Refetch hasPosition after closing or settling position
   useEffect(() => {
-    if (isClosed && refetchHasPosition) {
+    if ((isClosed || isSettled) && refetchHasPosition) {
       const timer = setTimeout(() => {
         refetchHasPosition()
       }, 2000)
       return () => clearTimeout(timer)
     }
-  }, [isClosed, refetchHasPosition])
+  }, [isClosed, isSettled, refetchHasPosition])
 
   const { data: positionAddress } = useReadContract({
     address: address && routerAddress && hasPosition ? routerAddress : undefined,
@@ -215,6 +253,37 @@ export default function PositionDashboard() {
     },
   })
 
+  // Get protection outcome calculation
+  const { data: protectionOutcome } = useReadContract({
+    address: address && routerAddress && hasPosition ? routerAddress : undefined,
+    abi: ROUTER_ABI,
+    functionName: 'calculateProtectionOutcome',
+    args: address ? [address] : undefined,
+    query: {
+      refetchInterval: hasPosition ? 30000 : false,
+    },
+  })
+
+  // Get oracle validation from position
+  const { data: oracleValidation } = useReadContract({
+    address: positionAddress ? (positionAddress as `0x${string}`) : undefined,
+    abi: POSITION_ABI,
+    functionName: 'validateOracle',
+    query: {
+      refetchInterval: positionAddress ? 30000 : false,
+    },
+  })
+
+  // Get safe exchange rate (with fallback)
+  const { data: safeExchangeRate } = useReadContract({
+    address: positionAddress ? (positionAddress as `0x${string}`) : undefined,
+    abi: POSITION_ABI,
+    functionName: 'getSafeExchangeRate',
+    query: {
+      refetchInterval: positionAddress ? 30000 : false,
+    },
+  })
+
   useEffect(() => {
     const loadApiRate = async () => {
       try {
@@ -234,6 +303,19 @@ export default function PositionDashboard() {
       return () => clearInterval(id)
     }
   }, [targetCurrency])
+
+  // Calculate rates for debug logging (before early return to maintain hook order)
+  const entryFxRateCalc =
+    entryRateRaw && typeof entryRateRaw === 'bigint'
+      ? Number(entryRateRaw) / 1e8
+      : null
+
+  const currentFxRateCalc =
+    apiRate ??
+    (onChainRate ? Number((onChainRate as [bigint, boolean])[0]) / 1e8 : null)
+  
+  const onChainFxRateCalc = onChainRate ? Number((onChainRate as [bigint, boolean])[0]) / 1e8 : null
+  
 
   if (!hasPosition || !positionDetails) {
     return (
@@ -266,21 +348,47 @@ export default function PositionDashboard() {
     boolean,
   ]
 
+  // Check if position is active
+  if (!isActive) {
+    return (
+      <div className="card">
+        <div className="text-center py-8">
+          <p className="text-purple-300">Position Closed</p>
+          <p className="text-sm text-purple-400 mt-2">
+            This position has been closed. No active position to display.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   const healthFactorNum = Number(healthFactor) / 10000
   const collateralNum = Number(formatUnits(collateral, 6))
   const debtNum = Number(formatUnits(debt, 6))
+  // Validate health factor - if it's unreasonably large or debt is 0, it's likely invalid
+  // When debt = 0, health factor calculation may be invalid (division by zero in contract)
+  const isValidHealthFactor = healthFactorNum > 0 && healthFactorNum < 1000 && !isNaN(healthFactorNum) && isFinite(healthFactorNum)
   const safetyBufferNum = Number(safetyBuffer) / 100
   const levelLtvPercents = [20, 35, 50]
   const valueProtectedPct = levelLtvPercents[level] ?? 0
-  const entryFxRate =
-    entryRateRaw && typeof entryRateRaw === 'bigint'
-      ? Number(entryRateRaw) / 1e8
-      : null
-
-  const currentFxRate =
-    apiRate ??
-    (onChainRate ? Number((onChainRate as [bigint, boolean])[0]) / 1e8 : null)
+  // Use pre-calculated values (already calculated before early return)
+  const entryFxRate = entryFxRateCalc
+  const currentFxRate = currentFxRateCalc
+  const onChainFxRate = onChainFxRateCalc
   const isRateStale = onChainRate ? (onChainRate as [bigint, boolean])[1] : false
+  
+  // Parse protection outcome
+  const [protectionAmount, depreciationPct, outcomeCurrentRate] = protectionOutcome as [bigint, bigint, bigint] ?? [BigInt(0), BigInt(0), BigInt(0)]
+  const protectionAmountNum = Number(formatUnits(protectionAmount, 6))
+  const depreciationPctNum = Number(depreciationPct) / 100
+  const outcomeRateNum = outcomeCurrentRate ? Number(outcomeCurrentRate) / 1e8 : null
+  
+  // Parse oracle validation
+  const [oracleIsValid, oracleReason] = oracleValidation as [boolean, string] ?? [true, '']
+  
+  // Parse safe exchange rate
+  const safeRateNum = safeExchangeRate ? Number(safeExchangeRate) / 1e8 : null
+  const isUsingFallback = safeRateNum && entryFxRate ? safeRateNum < entryFxRate * 0.9 : false
 
   const fxChangePct =
     entryFxRate && currentFxRate
@@ -333,40 +441,54 @@ export default function PositionDashboard() {
         </div>
       </div>
 
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-semibold text-purple-200">
-            Health Factor
-          </span>
-          <span
-            className={`text-lg font-bold ${
-              healthFactorNum >= 1.5
-                ? 'text-emerald-400'
-                : healthFactorNum >= 1.3
-                ? 'text-orange-400'
-                : healthFactorNum >= 1.15
-                ? 'text-red-400'
-                : 'text-red-500'
-            }`}
-          >
-            {healthFactorNum.toFixed(2)}
-          </span>
+      {isValidHealthFactor ? (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-semibold text-purple-200">
+              Health Factor
+            </span>
+            <span
+              className={`text-lg font-bold ${
+                healthFactorNum >= 1.5
+                  ? 'text-emerald-400'
+                  : healthFactorNum >= 1.3
+                  ? 'text-orange-400'
+                  : healthFactorNum >= 1.15
+                  ? 'text-red-400'
+                  : 'text-red-500'
+              }`}
+            >
+              {healthFactorNum.toFixed(2)}
+            </span>
+          </div>
+          <div className="h-3 bg-purple-950/50 rounded-full overflow-hidden border border-purple-800/30">
+            <div
+              className={`h-full transition-all duration-300 ${
+                healthFactorNum >= 1.5
+                  ? 'bg-emerald-500'
+                  : healthFactorNum >= 1.3
+                  ? 'bg-orange-500'
+                  : healthFactorNum >= 1.15
+                  ? 'bg-red-500'
+                  : 'bg-red-600'
+              }`}
+              style={{ width: `${Math.min((healthFactorNum / 2) * 100, 100)}%` }}
+            />
+          </div>
         </div>
-        <div className="h-3 bg-purple-950/50 rounded-full overflow-hidden border border-purple-800/30">
-          <div
-            className={`h-full transition-all duration-300 ${
-              healthFactorNum >= 1.5
-                ? 'bg-emerald-500'
-                : healthFactorNum >= 1.3
-                ? 'bg-orange-500'
-                : healthFactorNum >= 1.15
-                ? 'bg-red-500'
-                : 'bg-red-600'
-            }`}
-            style={{ width: `${Math.min((healthFactorNum / 2) * 100, 100)}%` }}
-          />
+      ) : debtNum === 0 ? (
+        <div className="mb-6 p-4 bg-indigo-900/30 border border-indigo-700/50 rounded-xl">
+          <div className="flex items-center space-x-2">
+            <ShieldCheck className="w-5 h-5 text-indigo-300" />
+            <div>
+              <p className="text-sm font-semibold text-indigo-200">Debt Fully Repaid</p>
+              <p className="text-xs text-indigo-300 mt-1">
+                All debt has been repaid. Health factor is not applicable when debt is zero.
+              </p>
+            </div>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <div className="bg-indigo-900/30 border border-indigo-700/50 rounded-xl p-4 mb-6">
         <div className="flex items-center space-x-2 mb-2">
@@ -388,11 +510,11 @@ export default function PositionDashboard() {
           <ShieldCheck className="w-5 h-5 text-purple-200" />
           <div>
             <p className="text-sm font-semibold text-white">Protection Outcome</p>
-            <p className="text-xs text-purple-300">Estimated coverage and avoided loss</p>
+            <p className="text-xs text-purple-300">Real-time protection calculation</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
           <div className="bg-purple-800/30 border border-purple-700/30 rounded-lg p-3">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-purple-300">Value Protected</span>
@@ -408,28 +530,54 @@ export default function PositionDashboard() {
 
           <div className="bg-purple-800/30 border border-purple-700/30 rounded-lg p-3">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-purple-300">Loss Avoided (est.)</span>
+              <span className="text-xs text-purple-300">Protection Amount</span>
               <Coins className="w-4 h-4 text-indigo-300" />
             </div>
-            {lossAvoidedEstimate === null ? (
-              <div className="text-sm text-purple-300">
-                Chưa có đủ dữ liệu (cần entry FX rate)
-              </div>
-            ) : (
+            {protectionAmountNum > 0 ? (
               <>
                 <div className="text-2xl font-bold text-white">
-                  {lossAvoidedEstimate.toLocaleString('en-US', {
+                  {protectionAmountNum.toLocaleString('en-US', {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })}{' '}
                   USDC
                 </div>
                 <p className="text-[11px] text-purple-400 mt-1">
-                  Uses safety buffer as downside protection proxy
+                  {depreciationPctNum > 0 ? `${depreciationPctNum.toFixed(2)}% depreciation` : 'No depreciation'}
                 </p>
               </>
+            ) : (
+              <div className="text-sm text-purple-300">
+                {outcomeRateNum === null ? 'Calculating...' : 'No protection needed (currency appreciated)'}
+              </div>
             )}
           </div>
+        </div>
+        
+        {/* Oracle Status */}
+        <div className={`mt-3 p-3 rounded-lg border ${
+          oracleIsValid 
+            ? 'bg-emerald-900/20 border-emerald-700/30' 
+            : 'bg-orange-900/20 border-orange-700/30'
+        }`}>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-white">Oracle Status</span>
+            <span className={`text-xs px-2 py-1 rounded ${
+              oracleIsValid 
+                ? 'bg-emerald-900/50 text-emerald-200' 
+                : 'bg-orange-900/50 text-orange-200'
+            }`}>
+              {oracleIsValid ? 'Healthy' : 'Warning'}
+            </span>
+          </div>
+          {!oracleIsValid && oracleReason && (
+            <p className="text-xs text-orange-300 mt-1">{oracleReason}</p>
+          )}
+          {isUsingFallback && (
+            <p className="text-xs text-yellow-300 mt-1">
+              ⚠️ Using fallback rate (90% of entry rate)
+            </p>
+          )}
         </div>
       </div>
 
@@ -455,7 +603,7 @@ export default function PositionDashboard() {
             <div className="text-sm font-semibold text-white">
               {createdAtDate
                 ? createdAtDate.toLocaleString()
-                : 'Chưa có (contract không lưu?)'}
+                : 'Not available'}
             </div>
           </div>
 
@@ -464,11 +612,8 @@ export default function PositionDashboard() {
               <span className="text-xs text-indigo-200">Entry FX Rate</span>
             </div>
             <div className="text-lg font-semibold text-white">
-              {entryFxRate ? `$${entryFxRate.toFixed(4)} USD` : 'Đang lấy...'}
+              {entryFxRate ? `$${entryFxRate.toFixed(4)} USD` : 'Loading...'}
             </div>
-            <p className="text-[11px] text-indigo-300 mt-1">
-              Lưu từ oracle lúc mở vị thế
-            </p>
           </div>
 
           <div className="bg-indigo-800/30 border border-indigo-700/30 rounded-lg p-3">
@@ -481,32 +626,42 @@ export default function PositionDashboard() {
               )}
             </div>
             <div className="text-lg font-semibold text-white">
-              {currentFxRate ? `$${currentFxRate.toFixed(4)} USD` : 'Đang lấy giá...'}
+              {currentFxRate ? `$${currentFxRate.toFixed(4)} USD` : 'Loading...'}
             </div>
             <p className="text-[11px] text-indigo-300 mt-1">
-              Ưu tiên API; fallback on-chain oracle
+              {apiRate ? 'From API (real-time)' : 'From on-chain Oracle'}
+              {onChainFxRate && apiRate && (
+                <span className="ml-1 text-indigo-400">
+                  (On-chain: ${onChainFxRate.toFixed(4)})
+                </span>
+              )}
             </p>
           </div>
+          
         </div>
+
       </div>
 
-      {/* Close Error */}
-      {closeError && (
+      {/* Close/Settle Error */}
+      {(closeError || settleError) && (
         <div className="mb-4 p-3 bg-purple-800/30 border border-purple-700/30 rounded-lg">
           <div className="flex items-start justify-between">
             <div className="flex items-start space-x-2 flex-1">
               <AlertCircle className="w-4 h-4 text-purple-300 flex-shrink-0 mt-0.5" />
               <p className="text-sm text-purple-200">
-                {closeError.message?.toLowerCase().includes('user rejected') ||
-                closeError.message?.toLowerCase().includes('user denied') ||
-                closeError.message?.toLowerCase().includes('rejected') ||
-                (closeError as any)?.code === 4001
+                {((closeError || settleError)?.message?.toLowerCase().includes('user rejected') ||
+                (closeError || settleError)?.message?.toLowerCase().includes('user denied') ||
+                (closeError || settleError)?.message?.toLowerCase().includes('rejected') ||
+                ((closeError || settleError) as any)?.code === 4001)
                   ? 'Transaction cancelled'
-                  : closeError.message || 'Failed to close position'}
+                  : (closeError || settleError)?.message || 'Transaction failed'}
               </p>
             </div>
             <button
-              onClick={() => resetCloseError()}
+              onClick={() => {
+                resetCloseError()
+                resetSettleError()
+              }}
               className="text-xs text-purple-400 hover:text-purple-200 underline ml-2"
             >
               Close
@@ -515,12 +670,58 @@ export default function PositionDashboard() {
         </div>
       )}
 
-      {/* Close Success */}
-      {isClosed && (
+      {/* Close/Settle Success */}
+      {(isClosed || isSettled) && (
         <div className="mb-4 p-4 bg-emerald-900/30 border border-emerald-700/50 rounded-xl">
           <p className="text-sm text-emerald-200 font-medium">
-            ✅ Position closed successfully!
+            {isSettled ? 'Protection settled successfully!' : 'Position closed successfully!'}
           </p>
+          {isSettled && protectionAmountNum > 0 && (
+            <p className="text-xs text-emerald-300 mt-1">
+              Protection payout: {protectionAmountNum.toFixed(2)} USDC
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Settlement Option */}
+      {debtNum === 0 && (
+        <div className="mb-4 p-3 bg-indigo-900/20 border border-indigo-700/30 rounded-xl">
+          <div className="flex items-center space-x-2 mb-2">
+            <input
+              type="checkbox"
+              id="settle-protection"
+              checked={useSettleProtection}
+              onChange={(e) => setUseSettleProtection(e.target.checked)}
+              className="w-4 h-4 text-indigo-600 rounded"
+            />
+            <label htmlFor="settle-protection" className="text-sm text-indigo-200 cursor-pointer">
+              Settle Protection (calculate payout if currency depreciated)
+            </label>
+          </div>
+          <p className="text-xs text-indigo-300">
+            {useSettleProtection 
+              ? 'This will calculate and pay out protection if your currency depreciated. Otherwise, it will just close the position.'
+              : 'Check this to settle protection and receive payout if currency depreciated'}
+          </p>
+        </div>
+      )}
+
+      {/* Warning if trying to close with debt */}
+      {debtNum > 0 && (
+        <div className="mb-4 p-4 bg-orange-900/30 border border-orange-700/50 rounded-xl">
+          <div className="flex items-start space-x-2">
+            <AlertCircle className="w-5 h-5 text-orange-300 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-orange-200 mb-1">
+                Cannot close position with outstanding debt
+              </p>
+              <p className="text-xs text-orange-300">
+                You have <strong>{debtNum.toFixed(2)} USDC</strong> in debt. 
+                Please use "Reduce Protection" to repay your debt first before closing the position.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -528,16 +729,32 @@ export default function PositionDashboard() {
         <button
           onClick={() => setShowReduceModal(true)}
           className="btn-secondary flex-1"
-          disabled={isClosing || isReducing || isConfirmingClose}
+          disabled={isClosing || isSettling || isReducing || isConfirmingClose || isConfirmingSettle}
         >
           Reduce Protection
         </button>
         <button
-          onClick={handleClose}
-          disabled={isClosing || isReducing || isConfirmingClose}
+          onClick={debtNum === 0 && useSettleProtection ? handleSettle : handleClose}
+          disabled={
+            debtNum > 0 || // Disable if there's debt
+            isClosing || 
+            isSettling || 
+            isReducing || 
+            isConfirmingClose || 
+            isConfirmingSettle
+          }
           className="flex-1 bg-gradient-to-r from-red-600 to-red-700 text-white font-semibold py-3 px-6 rounded-xl hover:from-red-700 hover:to-red-800 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+          title={debtNum > 0 ? 'Please repay debt first using "Reduce Protection"' : ''}
         >
-          {isClosing || isConfirmingClose ? 'Closing...' : 'Close Position'}
+          {isSettling || isConfirmingSettle 
+            ? 'Settling...' 
+            : isClosing || isConfirmingClose 
+            ? 'Closing...' 
+            : debtNum === 0 && useSettleProtection
+            ? 'Settle Protection'
+            : debtNum > 0
+            ? 'Repay Debt First'
+            : 'Close Position'}
         </button>
       </div>
 
@@ -569,7 +786,7 @@ export default function PositionDashboard() {
             {isReduced && (
               <div className="mb-4 p-3 bg-emerald-900/30 border border-emerald-700/50 rounded-xl">
                 <p className="text-sm text-emerald-200 font-medium">
-                  ✅ Protection reduced successfully!
+                  Protection reduced successfully!
                 </p>
               </div>
             )}
@@ -578,41 +795,71 @@ export default function PositionDashboard() {
               <label className="block text-sm font-semibold text-purple-200 mb-2">
                 Amount to Repay (USDC)
               </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                max={debtNum}
-                value={reduceAmount}
-                onChange={(e) => setReduceAmount(e.target.value)}
-                placeholder={`Max: ${debtNum.toFixed(2)}`}
-                className="input-field"
-                disabled={isReducing || isConfirmingReduce}
-              />
+              <div className="flex items-center space-x-2">
+                <input
+                  type="number"
+                  step="0.000001"
+                  min="0"
+                  max={debtNum}
+                  value={reduceAmount}
+                  onChange={(e) => setReduceAmount(e.target.value)}
+                  placeholder={`Max: ${debtNum.toFixed(6)}`}
+                  className="input-field flex-1"
+                  disabled={isReducing || isConfirmingReduce}
+                />
+                <button
+                  type="button"
+                  onClick={() => setReduceAmount(debtNum.toFixed(6))}
+                  className="px-3 py-2 text-xs bg-purple-700/50 hover:bg-purple-700/70 text-purple-200 rounded-lg border border-purple-600/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isReducing || isConfirmingReduce}
+                >
+                  Max
+                </button>
+              </div>
               <p className="text-xs text-purple-400 mt-1">
-                Current debt: {debtNum.toFixed(2)} USDC
+                Current debt: {debtNum.toFixed(6)} USDC
+                {debtNum > 0 && debtNum < 0.01 && (
+                  <span className="ml-2 text-orange-300">
+                    (Note: Very small amounts may have precision differences)
+                  </span>
+                )}
               </p>
             </div>
 
             <div className="flex space-x-3">
-              <button
-                onClick={() => {
-                  setShowReduceModal(false)
-                  setReduceAmount('')
-                  setError('')
-                }}
-                className="btn-secondary flex-1"
-                disabled={isReducing || isConfirmingReduce}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleReduce}
-                disabled={isReducing || isConfirmingReduce || !reduceAmount}
-                className="btn-primary flex-1"
-              >
-                {isReducing || isConfirmingReduce ? 'Processing...' : 'Reduce'}
-              </button>
+              {isReduced ? (
+                <button
+                  onClick={() => {
+                    setShowReduceModal(false)
+                    setReduceAmount('')
+                    setError('')
+                  }}
+                  className="btn-primary w-full"
+                >
+                  Close
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                      setShowReduceModal(false)
+                      setReduceAmount('')
+                      setError('')
+                    }}
+                    className="btn-secondary flex-1"
+                    disabled={isReducing || isConfirmingReduce}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleReduce}
+                    disabled={isReducing || isConfirmingReduce || !reduceAmount}
+                    className="btn-primary flex-1"
+                  >
+                    {isReducing || isConfirmingReduce ? 'Processing...' : 'Reduce'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -626,11 +873,31 @@ export default function PositionDashboard() {
       return
     }
 
+    // Check if there's outstanding debt
+    if (debtNum > 0) {
+      setError(`Cannot close position with outstanding debt. Please repay ${debtNum.toFixed(2)} USDC first using "Reduce Protection".`)
+      return
+    }
+
     setError('')
     writeClose({
       address: routerAddress,
       abi: ROUTER_ABI,
       functionName: 'closeProtection',
+    })
+  }
+
+  function handleSettle() {
+    if (!routerAddress) {
+      setError('Router contract not configured')
+      return
+    }
+
+    setError('')
+    writeSettle({
+      address: routerAddress,
+      abi: ROUTER_ABI,
+      functionName: 'settleProtection',
     })
   }
 
@@ -640,25 +907,31 @@ export default function PositionDashboard() {
       return
     }
 
-    const amount = parseFloat(reduceAmount)
+    const amount = Number.parseFloat(reduceAmount)
     if (!amount || amount <= 0) {
       setError('Please enter a valid amount')
       return
     }
 
-    if (amount > debtNum) {
-      setError('Cannot repay more than current debt')
+    // Convert to bigint for precise comparison (avoid floating point issues)
+    const repayAmountBigInt = parseUnits(reduceAmount, 6)
+    const debtBigInt = parseUnits(debtNum.toFixed(6), 6)
+    
+    // Allow small tolerance (0.000001 USDC) for rounding differences
+    const tolerance = parseUnits('0.000001', 6)
+    
+    if (repayAmountBigInt > debtBigInt + tolerance) {
+      setError(`Cannot repay more than current debt. Maximum: ${debtNum.toFixed(6)} USDC`)
       return
     }
 
     setError('')
-    const repayAmount = parseUnits(reduceAmount, 6)
-
+    
     writeReduce({
       address: routerAddress,
       abi: ROUTER_ABI,
       functionName: 'reduceProtection',
-      args: [repayAmount],
+      args: [repayAmountBigInt],
     })
   }
 }
