@@ -148,3 +148,7 @@ Health Factor = (Collateral × Collateral Factor × (Entry Rate / Current Rate))
 Contracts có cấu trúc tốt với security measures đầy đủ, nhưng có một số vấn đề logic quan trọng cần sửa, đặc biệt là Health Factor calculation không phản ánh đúng FX risk.
 
 
+
+
+
+

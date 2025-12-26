@@ -28,8 +28,8 @@ contract DeployScript is Script {
         ArcShieldRouter router = new ArcShieldRouter(address(factory), address(fundingPool));
         console.log("ArcShieldRouter deployed at:", address(router));
         
-        // 5. Set router address in FundingPool (already done in router constructor, but verify)
-        // The router constructor calls fundingPool.setRouter(address(this))
+        // 5. Set router address in FundingPool (must be done by owner)
+        fundingPool.setRouter(address(router));
         console.log("Router set in FundingPool");
         
         // 6. Initialize oracle with initial prices (example rates in 8 decimals)

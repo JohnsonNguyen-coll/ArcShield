@@ -104,7 +104,8 @@ contract ArcShieldRouter is IArcShieldRouter {
         fundingPool = FundingPool(_fundingPool);
         _status = _NOT_ENTERED;
         
-        fundingPool.setRouter(address(this));
+        // Note: setRouter must be called by the FundingPool owner after deployment
+        // This is done in the deployment script
         
         ltvLimits[ProtectionLevel.Low] = 2000;
         ltvLimits[ProtectionLevel.Medium] = 3500;
