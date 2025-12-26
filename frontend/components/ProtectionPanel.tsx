@@ -5,6 +5,7 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadCont
 import { Shield, AlertCircle } from 'lucide-react'
 import { parseUnits, formatUnits } from 'viem'
 import ProtectionSlider from './ProtectionSlider'
+import { fetchExchangeRates, rateFrom8Decimals } from '@/lib/priceService'
 
 // Contract ABI (simplified - in production, import from artifacts)
 const ROUTER_ABI = [
@@ -23,6 +24,19 @@ const ROUTER_ABI = [
     inputs: [{ name: 'user', type: 'address' }],
     name: 'hasPosition',
     outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const
+
+const PRICE_ORACLE_ABI = [
+  {
+    inputs: [{ name: 'currency', type: 'string' }],
+    name: 'getPrice',
+    outputs: [
+      { name: 'rate', type: 'uint256' },
+      { name: 'isStale', type: 'bool' },
+    ],
     stateMutability: 'view',
     type: 'function',
   },
@@ -53,14 +67,61 @@ const USDC_ABI = [
 
 const USDC_ADDRESS = '0x3600000000000000000000000000000000000000' as `0x${string}`
 
+interface ExchangeRates {
+  BRL: number
+  MXN: number
+  EUR: number
+}
+
 export default function ProtectionPanel() {
   const { address, isConnected } = useAccount()
   const [collateralAmount, setCollateralAmount] = useState('')
   const [targetCurrency, setTargetCurrency] = useState('BRL')
-  const [protectionLevel, setProtectionLevel] = useState<0 | 1 | 2>(1) // Medium by default
+  const [protectionLevel, setProtectionLevel] = useState<0 | 1 | 2>(1)
   const [error, setError] = useState('')
+  const [exchangeRates, setExchangeRates] = useState<ExchangeRates | null>(null)
 
   const routerAddress = process.env.NEXT_PUBLIC_ARCSHIELD_ROUTER_ADDRESS as `0x${string}`
+  const oracleAddress = process.env.NEXT_PUBLIC_PRICE_ORACLE_ADDRESS as `0x${string}`
+
+  // Fetch exchange rates from API (same as PriceDisplay)
+  useEffect(() => {
+    const fetchRates = async () => {
+      try {
+        const rates = await fetchExchangeRates()
+        setExchangeRates(rates)
+      } catch (error) {
+        console.error('Failed to fetch exchange rates:', error)
+      }
+    }
+
+    fetchRates()
+    // Refresh every 30 seconds to stay in sync with PriceDisplay
+    const interval = setInterval(fetchRates, 30000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Read on-chain prices for reference (but use API rates for display)
+  const { data: onChainPriceBRL } = useReadContract({
+    address: oracleAddress,
+    abi: PRICE_ORACLE_ABI,
+    functionName: 'getPrice',
+    args: ['BRL'],
+  })
+
+  const { data: onChainPriceMXN } = useReadContract({
+    address: oracleAddress,
+    abi: PRICE_ORACLE_ABI,
+    functionName: 'getPrice',
+    args: ['MXN'],
+  })
+
+  const { data: onChainPriceEUR } = useReadContract({
+    address: oracleAddress,
+    abi: PRICE_ORACLE_ABI,
+    functionName: 'getPrice',
+    args: ['EUR'],
+  })
 
   const {
     writeContract,
@@ -82,12 +143,11 @@ export default function ProtectionPanel() {
     args: address ? [address] : undefined,
   })
 
-  // Refetch hasPosition after successful activation
   useEffect(() => {
     if (isSuccess && refetchHasPosition) {
       const timer = setTimeout(() => {
         refetchHasPosition()
-      }, 2000) // Wait 2 seconds for blockchain to update
+      }, 2000)
       return () => clearTimeout(timer)
     }
   }, [isSuccess, refetchHasPosition])
@@ -100,7 +160,7 @@ export default function ProtectionPanel() {
     args: address && routerAddress ? [address, routerAddress] : undefined,
     query: {
       enabled: !!address && !!routerAddress && !!collateralAmount && parseFloat(collateralAmount) > 0,
-      refetchInterval: 3000, // Refetch every 3 seconds to catch approval updates
+      refetchInterval: 3000,
     },
   })
 
@@ -117,7 +177,6 @@ export default function ProtectionPanel() {
     hash: approveHash,
   })
 
-  // Refetch allowance after successful approval
   useEffect(() => {
     if (isApproved && refetchAllowance) {
       const timer = setTimeout(() => {
@@ -130,10 +189,8 @@ export default function ProtectionPanel() {
   const allowanceNum = allowance ? Number(formatUnits(allowance, 6)) : 0
   const collateralNum = collateralAmount ? parseFloat(collateralAmount) : 0
   const hasEnoughAllowance = collateralNum > 0 && allowanceNum >= collateralNum
-  // Hide approve button when approved successfully, even before allowance refetches
   const needsApproval = collateralNum > 0 && !hasEnoughAllowance && !isApproved
 
-  // Check if approve error is user rejection
   const isApproveUserRejection = approveError && (
     approveError.message?.toLowerCase().includes('user rejected') ||
     approveError.message?.toLowerCase().includes('user denied') ||
@@ -145,7 +202,6 @@ export default function ProtectionPanel() {
     (approveError as any)?.shortMessage?.toLowerCase().includes('denied')
   )
 
-  // Check if error is user rejection
   const isUserRejection = writeError && (
     writeError.message?.toLowerCase().includes('user rejected') ||
     writeError.message?.toLowerCase().includes('user denied') ||
@@ -159,10 +215,7 @@ export default function ProtectionPanel() {
 
   const handleApprove = () => {
     if (!routerAddress) return
-
-    // Approve max amount (1M USDC) for convenience
     const amount = parseUnits('1000000', 6)
-
     approveUSDC({
       address: USDC_ADDRESS,
       abi: USDC_ABI,
@@ -190,9 +243,7 @@ export default function ProtectionPanel() {
     setError('')
 
     try {
-      // Convert USDC amount to wei (6 decimals for USDC)
       const amount = parseUnits(collateralAmount, 6)
-
       writeContract({
         address: routerAddress,
         abi: ROUTER_ABI,
@@ -219,6 +270,9 @@ export default function ProtectionPanel() {
       description: 'Maximum protection',
     },
   ]
+
+  // Display current exchange rate (same as PriceDisplay component)
+  const currentRate = exchangeRates?.[targetCurrency as keyof ExchangeRates] || 0
 
   return (
     <div className="card">
@@ -270,7 +324,6 @@ export default function ProtectionPanel() {
         </div>
       )}
 
-      {/* Position Already Exists Warning */}
       {hasPosition && (
         <div className="mb-4 p-4 bg-orange-900/30 border border-orange-700/50 rounded-xl flex items-start space-x-3">
           <AlertCircle className="w-5 h-5 text-orange-300 flex-shrink-0 mt-0.5" />
@@ -285,7 +338,6 @@ export default function ProtectionPanel() {
         </div>
       )}
 
-      {/* Approve Error */}
       {approveError && (
         <div className="mb-4 p-3 bg-purple-800/30 border border-purple-700/30 rounded-lg">
           <div className="flex items-start justify-between">
@@ -306,6 +358,16 @@ export default function ProtectionPanel() {
       )}
 
       <div className="space-y-6">
+        {/* Current Exchange Rate Display */}
+        {currentRate > 0 && (
+          <div className="bg-purple-800/20 border border-purple-700/30 rounded-xl p-3">
+            <div className="text-xs text-purple-400 mb-1">Current Rate</div>
+            <div className="text-lg font-bold text-purple-100">
+              1 {targetCurrency} = ${currentRate.toFixed(4)} USD
+            </div>
+          </div>
+        )}
+
         {/* Collateral Amount */}
         <div>
           <label className="block text-sm font-semibold text-purple-200 mb-2">

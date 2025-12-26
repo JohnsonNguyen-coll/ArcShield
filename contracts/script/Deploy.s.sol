@@ -4,6 +4,7 @@ pragma solidity ^0.8.30;
 import "forge-std/Script.sol";
 import "../src/PriceOracle.sol";
 import "../src/HedgePositionFactory.sol";
+import "../src/FundingPool.sol";
 import "../src/ArcShieldRouter.sol";
 
 contract DeployScript is Script {
@@ -11,22 +12,30 @@ contract DeployScript is Script {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(deployerPrivateKey);
         
-        // Deploy PriceOracle first
+        // 1. Deploy PriceOracle first
         PriceOracle oracle = new PriceOracle();
         console.log("PriceOracle deployed at:", address(oracle));
         
-        // Deploy factory with oracle address
+        // 2. Deploy HedgePositionFactory with oracle address
         HedgePositionFactory factory = new HedgePositionFactory(address(oracle));
         console.log("HedgePositionFactory deployed at:", address(factory));
         
-        // Deploy router with factory address
-        ArcShieldRouter router = new ArcShieldRouter(address(factory));
+        // 3. Deploy FundingPool
+        FundingPool fundingPool = new FundingPool();
+        console.log("FundingPool deployed at:", address(fundingPool));
+        
+        // 4. Deploy ArcShieldRouter with factory and funding pool addresses
+        ArcShieldRouter router = new ArcShieldRouter(address(factory), address(fundingPool));
         console.log("ArcShieldRouter deployed at:", address(router));
         
-        // Initialize oracle with initial prices (example rates in 8 decimals)
-        // 1 BRL = 0.2 USD = 20000000
-        // 1 MXN = 0.06 USD = 6000000
-        // 1 EUR = 1.1 USD = 110000000
+        // 5. Set router address in FundingPool (already done in router constructor, but verify)
+        // The router constructor calls fundingPool.setRouter(address(this))
+        console.log("Router set in FundingPool");
+        
+        // 6. Initialize oracle with initial prices (example rates in 8 decimals)
+        // 1 BRL = 0.2 USD = 20000000 (20,000,000 / 100,000,000 = 0.2)
+        // 1 MXN = 0.06 USD = 6000000 (6,000,000 / 100,000,000 = 0.06)
+        // 1 EUR = 1.1 USD = 110000000 (110,000,000 / 100,000,000 = 1.1)
         string[] memory currencies = new string[](3);
         uint256[] memory rates = new uint256[](3);
         
@@ -42,7 +51,26 @@ contract DeployScript is Script {
         oracle.updatePrices(currencies, rates);
         console.log("Oracle initialized with initial prices");
         
+        // 7. Set fallback rates for oracle reliability
+        oracle.setFallbackRate("BRL", 20000000);
+        oracle.setFallbackRate("MXN", 6000000);
+        oracle.setFallbackRate("EUR", 110000000);
+        console.log("Fallback rates set");
+        
+        // 8. Optional: Add initial liquidity to FundingPool for testing
+        // Uncomment if you want to add initial funds
+        // uint256 initialLiquidity = 100000 * 1e6; // 100,000 USDC
+        // IERC20(fundingPool.USDC()).approve(address(fundingPool), initialLiquidity);
+        // fundingPool.deposit(initialLiquidity);
+        // console.log("Initial liquidity added to FundingPool");
+        
+        console.log("\n=== Deployment Summary ===");
+        console.log("PriceOracle:", address(oracle));
+        console.log("HedgePositionFactory:", address(factory));
+        console.log("FundingPool:", address(fundingPool));
+        console.log("ArcShieldRouter:", address(router));
+        console.log("========================\n");
+        
         vm.stopBroadcast();
     }
 }
-
