@@ -28,7 +28,7 @@ const arcTestnet = {
 const config = createConfig({
   chains: [arcTestnet],
   connectors: [
-    injected(), // MetaMask, Brave, OKX, Coin98
+    injected(), // MetaMask, Brave, OKX, Coin98 - will auto-detect available providers
     walletConnect({
       projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
     }),

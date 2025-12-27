@@ -249,7 +249,7 @@ export default function PositionDashboard() {
     functionName: 'getPrice',
     args: targetCurrency ? [targetCurrency as string] : undefined,
     query: {
-      refetchInterval: targetCurrency ? 15000 : false,
+      refetchInterval: targetCurrency ? 15000 : false, // Auto-refetch every 15 seconds
     },
   })
 
@@ -310,11 +310,14 @@ export default function PositionDashboard() {
       ? Number(entryRateRaw) / 1e8
       : null
 
-  const currentFxRateCalc =
-    apiRate ??
-    (onChainRate ? Number((onChainRate as [bigint, boolean])[0]) / 1e8 : null)
-  
+  // Prefer on-chain rate if available and not stale (source of truth after oracle updates)
   const onChainFxRateCalc = onChainRate ? Number((onChainRate as [bigint, boolean])[0]) / 1e8 : null
+  const isOnChainStale = onChainRate ? (onChainRate as [bigint, boolean])[1] : false
+  
+  const currentFxRateCalc =
+    (onChainFxRateCalc && !isOnChainStale) 
+      ? onChainFxRateCalc 
+      : (apiRate ?? onChainFxRateCalc ?? null)
   
 
   if (!hasPosition || !positionDetails) {

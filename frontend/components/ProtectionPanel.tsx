@@ -131,12 +131,15 @@ export default function ProtectionPanel() {
     return () => clearInterval(interval)
   }, [])
 
-  // Read on-chain prices for reference (but use API rates for display)
+  // Read on-chain prices with auto-refetch (for display after oracle updates)
   const { data: onChainPriceBRL } = useReadContract({
     address: oracleAddress,
     abi: PRICE_ORACLE_ABI,
     functionName: 'getPrice',
     args: ['BRL'],
+    query: {
+      refetchInterval: 15000, // Auto-refetch every 15 seconds
+    },
   })
 
   const { data: onChainPriceMXN } = useReadContract({
@@ -144,6 +147,9 @@ export default function ProtectionPanel() {
     abi: PRICE_ORACLE_ABI,
     functionName: 'getPrice',
     args: ['MXN'],
+    query: {
+      refetchInterval: 15000,
+    },
   })
 
   const { data: onChainPriceEUR } = useReadContract({
@@ -151,6 +157,9 @@ export default function ProtectionPanel() {
     abi: PRICE_ORACLE_ABI,
     functionName: 'getPrice',
     args: ['EUR'],
+    query: {
+      refetchInterval: 15000,
+    },
   })
 
   const {
@@ -342,6 +351,14 @@ export default function ProtectionPanel() {
                     }
                   }
                   
+                  // Refetch exchange rates to update display after oracle sync
+                  try {
+                    const updatedRates = await fetchExchangeRates()
+                    setExchangeRates(updatedRates)
+                  } catch (err) {
+                    console.error('Failed to refetch exchange rates after oracle sync:', err)
+                  }
+                  
                   if (!verified) {
                     // Get final on-chain rate for warning
                     const finalPriceData = await client.readContract({
@@ -407,8 +424,22 @@ export default function ProtectionPanel() {
     },
   ]
 
-  // Display current exchange rate (same as PriceDisplay component)
-  const currentRate = exchangeRates?.[targetCurrency as keyof ExchangeRates] || 0
+  // Display current exchange rate - prefer on-chain if available and not stale
+  const onChainPriceData = 
+    targetCurrency === 'BRL' ? onChainPriceBRL :
+    targetCurrency === 'MXN' ? onChainPriceMXN :
+    onChainPriceEUR
+  
+  const onChainRateForDisplay = onChainPriceData
+    ? rateFrom8Decimals((onChainPriceData as [bigint, boolean])[0])
+    : null
+  const isStaleForDisplay = onChainPriceData ? (onChainPriceData as [bigint, boolean])[1] : false
+  const apiRateForDisplay = exchangeRates?.[targetCurrency as keyof ExchangeRates] || null
+  
+  // Prefer on-chain rate if available and not stale (matches PriceDisplay logic)
+  const currentRate = (onChainRateForDisplay && !isStaleForDisplay) 
+    ? onChainRateForDisplay 
+    : (apiRateForDisplay || onChainRateForDisplay || 0)
 
   return (
     <div className="card">

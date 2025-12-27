@@ -1,8 +1,8 @@
-name: Update Oracle Price Daily
+name: Update Oracle Price Every 3 Hours
 
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 */3 * * *'  # Run every 3 hours at minute 0 (00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, 21:00 UTC)
   
   workflow_dispatch:
 

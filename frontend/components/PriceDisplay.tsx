@@ -27,12 +27,15 @@ export default function PriceDisplay({ oracleAddress, currency }: PriceDisplayPr
   const [apiRate, setApiRate] = useState<number | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
-  // Read on-chain price
+  // Read on-chain price with auto-refetch
   const { data: onChainPrice, refetch: refetchOnChain } = useReadContract({
     address: oracleAddress,
     abi: PRICE_ORACLE_ABI,
     functionName: 'getPrice',
     args: [currency],
+    query: {
+      refetchInterval: 15000, // Auto-refetch on-chain price every 15 seconds
+    },
   })
 
   // Fetch API price
@@ -41,7 +44,7 @@ export default function PriceDisplay({ oracleAddress, currency }: PriceDisplayPr
     try {
       const rates = await fetchExchangeRates()
       setApiRate(rates[currency])
-      // Refetch on-chain price after a delay
+      // Refetch on-chain price after a delay to sync
       setTimeout(() => {
         refetchOnChain()
       }, 1000)
@@ -55,7 +58,7 @@ export default function PriceDisplay({ oracleAddress, currency }: PriceDisplayPr
   useEffect(() => {
     if (oracleAddress) {
       fetchApiPrice()
-      // Refresh every 30 seconds
+      // Refresh API price every 30 seconds
       const interval = setInterval(fetchApiPrice, 30000)
       return () => clearInterval(interval)
     }
@@ -66,8 +69,9 @@ export default function PriceDisplay({ oracleAddress, currency }: PriceDisplayPr
     : null
   const isStale = onChainPrice ? (onChainPrice as [bigint, boolean])[1] : false
 
-  // Prefer API rate (real-time), fallback to on-chain if unavailable
-  const displayRate = apiRate || onChainRate || 0
+  // Prefer on-chain rate if available and not stale (this is the source of truth after oracle updates)
+  // Fallback to API rate if on-chain is unavailable or stale
+  const displayRate = (onChainRate && !isStale) ? onChainRate : (apiRate || onChainRate || 0)
   const currencyNames = {
     BRL: 'Brazilian Real',
     MXN: 'Mexican Peso',
